@@ -1,0 +1,33 @@
+# Strict overlay: merge into a complete configuration with a real PROXY node/group.
+# UDP failures must hit REJECT before any other routing rule.
+# See WEBRTC.md. Replaces DNS/TUN settings; does not contain proxy nodes.
+mode: rule
+ipv6: true
+tun:
+  enable: true
+  stack: mixed
+  auto-route: true
+  auto-detect-interface: true
+  strict-route: true
+  inet6-address:
+    - fdfe:dcba:9876::1/126
+  dns-hijack:
+    - any:53
+    - tcp://any:53
+dns:
+  enable: true
+  ipv6: true
+  respect-rules: true
+  enhanced-mode: fake-ip
+  fake-ip-range: 198.18.0.1/16
+  default-nameserver:
+    - 223.5.5.5
+  proxy-server-nameserver:
+    - https://dns.alidns.com/dns-query
+  nameserver:
+    - https://1.1.1.1/dns-query#PROXY
+    - https://1.0.0.1/dns-query#PROXY
+rules:
+  - NETWORK,udp,PROXY
+  - NETWORK,udp,REJECT
+  - MATCH,PROXY

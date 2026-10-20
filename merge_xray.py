@@ -4,8 +4,11 @@ No network requests. Preserve node credentials, streamSettings and balancers.
 This must run on each subscription response in a server-side integration.
 """
 import argparse,copy,json,pathlib
+from webrtc_guard import MODES, validate_xray_proxy, xray_rules
 
-def merge_subscription(payload, overlay, proxy_tag='proxy', proxy_balancer=None):
+def merge_subscription(payload, overlay, proxy_tag='proxy', proxy_balancer=None, webrtc=None):
+    if webrtc is not None and overlay.get('routing', {}).get('script'):
+        raise ValueError('WebRTC guard cannot be combined with a custom routing script')
     result=copy.deepcopy(payload)
     configs=result if isinstance(result,list) else [result]
     if not configs:raise ValueError('Empty subscription')
@@ -26,7 +29,11 @@ def merge_subscription(payload, overlay, proxy_tag='proxy', proxy_balancer=None)
             else:
                 out=next(x for x in config['outbounds'] if x.get('tag')==tag)
                 if out.get('protocol')!=protocol:raise ValueError('Conflicting '+tag+' outbound protocol')
+        if webrtc is not None:
+            validate_xray_proxy(config, proxy_tag, proxy_balancer)
         routing=copy.deepcopy(overlay['routing'])
+        if webrtc is not None:
+            routing['rules']=xray_rules(webrtc)+routing['rules']
         if balancers:routing['balancers']=copy.deepcopy(balancers)
         for r in routing['rules']:
             if r.get('outboundTag')=='proxy':
@@ -45,7 +52,9 @@ def main():
     p.add_argument('--routing',type=pathlib.Path,default=pathlib.Path(__file__).with_name('Leora-Xray-Routing.json'))
     p.add_argument('--output',required=True,type=pathlib.Path)
     g=p.add_mutually_exclusive_group();g.add_argument('--proxy-tag',default='proxy');g.add_argument('--proxy-balancer')
+    p.add_argument('--webrtc', choices=MODES, help='udp: guard UDP and common STUN/TURN; strict: proxy all captured TCP/UDP')
     a=p.parse_args()
-    out=merge_subscription(json.loads(a.input.read_text()),json.loads(a.routing.read_text()),a.proxy_tag,a.proxy_balancer)
+    if a.input.resolve()==a.output.resolve():p.error('Use a separate output file to keep the original configuration')
+    out=merge_subscription(json.loads(a.input.read_text()),json.loads(a.routing.read_text()),a.proxy_tag,a.proxy_balancer,a.webrtc)
     a.output.write_text(json.dumps(out,ensure_ascii=False,separators=(',',':'))+'\n')
 if __name__=='__main__':main()

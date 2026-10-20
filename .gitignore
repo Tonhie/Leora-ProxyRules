@@ -2,3 +2,9 @@
 __pycache__/
 *.pyc
 .DS_Store
+
+# Local configurations from the documented merge commands can contain credentials.
+/original.yaml
+/original.json
+/protected.yaml
+/protected.json

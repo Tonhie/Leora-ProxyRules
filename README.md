@@ -21,6 +21,15 @@ python3 merge_xray.py --input original.json --output routed.json --proxy-tag you
 
 合并会替换原有通用路由，保留 API 专用路由；使用前备份原配置。
 
+## WebRTC 防泄漏（可选）
+
+```bash
+python3 merge_mihomo.py --input original.yaml --output protected.yaml --webrtc udp
+python3 merge_xray.py --input original.json --output protected.json --webrtc udp
+```
+
+`udp` 强制代理全部已接管 UDP，并防止 UDP 不支持时落入直连；其他 TCP 保留分流。更严格时将 `udp` 改为 `strict`，全部已接管 TCP/UDP 走代理，会覆盖原分流。必须启用客户端 TUN/VPN 并接管 IPv4/IPv6；仅系统代理不足。详细用法、配置模板和限制见 [WEBRTC.md](WEBRTC.md)。
+
 ## 更新
 
 在 GitHub Actions 中运行 **Refresh Leora rules**，或本地执行：
@@ -34,4 +43,4 @@ python3 build_rules.py
 
 ## 差异
 
-跨客户端转换不完全等价：USER-AGENT/URL-REGEX 不转换，Xray 的 DNS 解析及 ASN 匹配存在差异。Mihomo/Xray 路由文件不包含 Shadowrocket 的 STUN 伪装及全部 DNS/TUN 设置，不能单独保证防止 WebRTC 泄漏。详见 [转换报告](conversion-report.json)。第三方规则权利归各来源项目。
+跨客户端转换不完全等价：USER-AGENT/URL-REGEX 不转换，Xray 的 DNS 解析及 ASN 匹配存在差异。普通路由文件不包含 WebRTC 防护；可选防护也不提供 Shadowrocket 的 STUN 应答伪装。详见 [转换报告](conversion-report.json)。第三方规则权利归各来源项目。
