@@ -1,19 +1,23 @@
 mode: rule
-ipv6: true
+ipv6: false
+hosts:
+  localhost: 127.0.0.1
 tun:
   enable: true
   stack: mixed
   auto-route: true
   auto-detect-interface: true
   strict-route: true
-  inet6-address:
-  - fdfe:dcba:9876::1/126
   dns-hijack:
   - any:53
   - tcp://any:53
   route-exclude-address:
+  - 10.0.0.0/8
   - 100.64.0.0/10
-  - fd7a:115c:a1e0::/48
+  - 127.0.0.0/8
+  - 169.254.0.0/16
+  - 172.16.0.0/12
+  - 192.168.0.0/16
 dns:
   enable: true
   ipv6: false
@@ -405,10 +409,11 @@ rule-providers:
 rules:
 - DST-PORT,53,leora-dns-out
 - DOMAIN,localhost,DIRECT
-- DOMAIN-SUFFIX,local,DIRECT
-- DOMAIN-SUFFIX,ts.net,DIRECT
-- IP-CIDR,10.0.0.0/8,DIRECT,no-resolve
+- DOMAIN-REGEX,^.*\.local$,DIRECT
+- DOMAIN,ts.net,DIRECT
+- DOMAIN-REGEX,^.*\.ts\.net$,DIRECT
 - IP-CIDR,100.64.0.0/10,DIRECT,no-resolve
+- IP-CIDR,10.0.0.0/8,DIRECT,no-resolve
 - IP-CIDR,127.0.0.0/8,DIRECT,no-resolve
 - IP-CIDR,169.254.0.0/16,DIRECT,no-resolve
 - IP-CIDR,172.16.0.0/12,DIRECT,no-resolve

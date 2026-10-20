@@ -1,6 +1,6 @@
 # WebRTC 防泄漏配置
 
-Mihomo/Xray 通过“代理连接，代理不可用时失败”降低真实公网 IP 泄漏风险；Shadowrocket 使用 STUN 应答伪装。防护只作用于**已进入代理核心的流量**；需要客户端 TUN/VPN 接管 IPv4 和 IPv6。仅导入路由或打开系统 HTTP 代理不足以覆盖浏览器 UDP。
+Mihomo/Xray 通过“代理连接，代理不可用时失败”降低真实公网 IP 泄漏风险；Shadowrocket 使用 STUN 应答伪装。防护只作用于**已进入代理核心的流量**；需要客户端 TUN/VPN 接管 IPv4，并在客户端或系统层阻断未接管的 IPv6。仅导入路由或打开系统 HTTP 代理不足以覆盖浏览器 UDP。
 
 ## 默认策略
 
@@ -27,9 +27,9 @@ python3 merge_mihomo.py --input original.yaml --output protected.yaml
 python3 merge_mihomo.py --input original.yaml --output protected.yaml --proxy-name MY-NODE
 ```
 
-将 `protected.yaml` 作为客户端配置加载，保持 **Rule/规则模式**，开启客户端 TUN 权限并确认 IPv4/IPv6 均被接管。订阅或原配置更新后，需要重新执行合并并重新加载。
+将 `protected.yaml` 作为客户端配置加载，保持 **Rule/规则模式**，开启客户端 TUN 权限并确认 IPv4 被接管、未接管的 IPv6 已阻断。订阅或原配置更新后，需要重新执行合并并重新加载。
 
-脚本保留节点及其他顶层配置，替换通用 `rules`，合并本仓库 `rule-providers`，并替换 `tun`、`dns`、`ipv6`、`mode`。旧 TUN 排除列表替换为 Tailscale 的两个地址段，不保留任意宽泛排除。应用前检查客户端是否额外注入绕过列表、应用排除、`listeners` 的专用规则或指定出站；这些可能绕过通用规则。
+脚本保留节点及其他顶层配置，替换通用 `rules`，合并本仓库 `rule-providers`，并替换 `tun`、`dns`、`ipv6`、`mode`、`hosts`。TUN 排除列表逐项读取 Shadowrocket 的 `tun-excluded-routes`，包含其局域网和 Tailscale IPv4 网段。应用前检查客户端是否额外注入绕过列表、应用排除、`listeners` 的专用规则或指定出站；这些可能绕过通用规则。
 
 DNS 使用 fake-IP，默认查询为指定代理上的加密 DoH，直连目标可使用阿里 DoH；`direct-nameserver-follow-policy` 确保校园/尾网访问仍使用专用 DNS。节点域名使用加密 DoH 引导，节点属于校园/尾网时也遵守专用策略。禁用系统 hosts，DNS 不回退到系统解析器；引导地址使用有有效 TLS 证书的 IP URL，避免明文 DNS 引导。**fake-IP 不是 STUN 伪装。** 为避免启动循环，节点域名的加密引导解析允许直连；这会向指定解析器暴露节点域名，但不使用 ISP 明文 DNS。校园及 Tailscale 的域名专用 DNS 自动从 Shadowrocket `[Host]` 同步，专用查询显式使用 DIRECT；这些域名排除 fake-IP，返回真实地址。
 
@@ -54,7 +54,7 @@ python3 merge_xray.py --input original.json --output protected.json --proxy-bala
 
 **JSON 路由不会自动安装 TUN 或接管系统 UDP。** 在客户端开启 VPN/TUN，允许 UDP 转发，确认 IPv6 被接管；客户端无法接管 IPv6 时，应在系统/网络层禁用或阻断 IPv6，不能只依靠 DNS 禁止 AAAA。关闭应用绕过/绕过大陆/自动直连回退，配置代理故障时阻断连接。客户端停止后如需继续阻断，也需客户端或操作系统的 kill switch；这些不由路由 JSON 提供。
 
-合并器会用同步 DNS 策略替换原 `dns`，并添加 `leora-dns-out` DNS 出站。已进入核心的传统 TCP/UDP 53 查询被导入内置 DNS；专用 DNS 的内部查询以 `leora-dns` 标签直连固定解析器，其他解析使用经代理的 DoH。公网 DoH 的内部查询显式强制走代理，不会被 China 等直连规则覆盖；未获准的内部 DNS 目的地拒绝，代理故障不使用直连或系统 DNS。为避免代理域名解析循环，合并器为 `servers`/`vnext` 中的公网节点域名添加精确匹配的 `https://223.5.5.5/dns-query` 加密直连引导；校园/尾网节点域名继续使用专用 DNS。这类引导查询不提供代理隐藏。`leora-dns` 和 `leora-bootstrap` 是保留的内部标签，不能用于普通流量入站。直连出口使用内置 DNS；除校园/尾网专用策略与节点引导外，Xray 普通域名查询统一通过代理 DoH，比 Shadowrocket 允许的直连 DNS 范围更窄。两端按源配置关闭 DNS AAAA，Mihomo 仍接管 IPv6；DNS 不返回 AAAA 不等于阻断字面量 IPv6。Xray 26.3.27 内置 DNS 处理 A/AAAA，其他记录类型明确拒绝；Tailscale 原生 DNS 的查询应通过系统本地路由访问 Quad100，可保留其其他记录类型能力。应用自带 DoH（443 或其他端口）不会被 53 接管；将浏览器安全 DNS 关闭以使用代理 DNS，或配置为同一受控 DoH 并验证其出口。标准 853 端口的 DoT/DoQ 被阻断，其他端口不保证覆盖。
+合并器会用同步 DNS 策略替换原 `dns`，并添加 `leora-dns-out` DNS 出站。已进入核心的传统 TCP/UDP 53 查询被导入内置 DNS；专用 DNS 的内部查询以 `leora-dns` 标签直连固定解析器，其他解析使用经代理的 DoH。公网 DoH 的内部查询显式强制走代理，不会被 China 等直连规则覆盖；未获准的内部 DNS 目的地拒绝，代理故障不使用直连或系统 DNS。为避免代理域名解析循环，合并器为 `servers`/`vnext` 中的公网节点域名添加精确匹配的 `https://223.5.5.5/dns-query` 加密直连引导；校园/尾网节点域名继续使用专用 DNS。这类引导查询不提供代理隐藏。`leora-dns` 和 `leora-bootstrap` 是保留的内部标签，不能用于普通流量入站。直连出口使用内置 DNS；除校园/尾网专用策略与节点引导外，Xray 普通域名查询统一通过代理 DoH，比 Shadowrocket 允许的直连 DNS 范围更窄。两端按源配置关闭 DNS AAAA；Mihomo 同时关闭顶层 IPv6，不再配置 IPv6 TUN 地址；Xray 直连解析使用 `ForceIPv4`，解析失败不退回系统解析器。DNS 不返回 AAAA 不等于阻断字面量 IPv6，Xray 没有等价的全局 IPv6 开关，外部客户端必须阻断未接管的 IPv6。Xray 26.3.27 内置 DNS 处理 A/AAAA，其他记录类型明确拒绝；Tailscale 原生 DNS 的查询应通过系统本地路由访问 Quad100，可保留其其他记录类型能力。应用自带 DoH（443 或其他端口）不会被 53 接管；将浏览器安全 DNS 关闭以使用代理 DNS，或配置为同一受控 DoH 并验证其出口。标准 853 端口的 DoT/DoQ 被阻断，其他端口不保证覆盖。
 
 主 JSON 已包含广告拒绝、Steam 例外及防护规则，不再提供纯防护或无防护模板。
 
@@ -74,7 +74,7 @@ python3 merge_xray.py --input original.json --output protected.json --proxy-bala
 
 Mihomo 使用 `nameserver-policy`，Xray 使用 `servers.domains`，专用 DNS 无记录/失败时不转给公共解析器。校园域名访问本地直连以使用校园网络或校园 VPN；解析器不从公网可达时，这些域名会解析失败，这是预期边界。
 
-Tailscale 使用 `100.64.0.0/10` 和 `fd7a:115c:a1e0::/48`。三端保留本地直连；Shadowrocket 保留原 IPv4 TUN 排除，并加入 IPv6 直连规则（iOS 实际接管行为仍需客户端验证）；Mihomo 对两个网段加入 TUN 排除，并对 `ts.net` 排除 fake-IP。Xray JSON 无法修改外部客户端的 TUN 路由，需在该客户端的路由排除中加入这两个网段。不要把整个 UDP 或任意公网范围加入直连例外。
+Tailscale 使用 `100.64.0.0/10` 和 `fd7a:115c:a1e0::/48`。三端保留本地直连；Shadowrocket 保留原 IPv4 TUN 排除，并加入 IPv6 直连规则（iOS 实际接管行为仍需客户端验证）；Mihomo 按源配置保留 IPv4 TUN 排除，并对 `ts.net` 排除 fake-IP。源配置保留的尾网 IPv6 DIRECT 规则也同步，但禁用 IPv6 时不能承诺核心内尾网 IPv6 可用，应优先使用尾网 IPv4。Xray JSON 无法修改外部客户端的 TUN 路由，需在客户端同步源配置的 `tun-excluded-routes`。不要把整个 UDP 或任意公网范围加入直连例外。
 
 这些例外不安装、不启动 Tailscale，不添加操作系统的校园/子网路由。需要 Tailscale 本身运行、MagicDNS 正常，并使用完整的 `设备.尾网.ts.net` 名称；短主机名的搜索域由系统/Tailscale 管理。不要强制将本地 DNS/服务绑定到不支持相应路由的物理网卡。TUN 排除表示交由系统路由，不表示在没有 Tailscale 的机器上也能访问尾网。
 
@@ -133,3 +133,22 @@ Action 使用固定版本且校验 SHA-256 的官方核心，运行上述全部�
 - [Xray 路由与可嗅探协议](https://xtls.github.io/en/config/routing.html)：没有可直接使用的 STUN 协议路由条件，不能写一个 `protocol: stun` 假装防护生效。
 
 浏览器 DNS 策略依据：[Chromium DnsOverHttpsMode](https://github.com/chromium/chromium/blob/main/components/policy/resources/templates/policy_definitions/Miscellaneous/DnsOverHttpsMode.yaml)、[Firefox TRR 用户设置](https://firefox-source-docs.mozilla.org/networking/dns/dns-over-https-trr.html#user-choice)。
+
+## 基础设置同步范围
+
+`Leora-ProxyRules.conf` 的 `[General]` 和 `[Host]` 是唯一来源。生成器和合并器检查全部 15 个 General 选项；新增选项、缺失选项或尚未支持的取值会报错，Action 不会发布悄悄忽略这些设置的配置。`conversion-report.json` 的 `general_settings` 记录每个源值及实现边界。
+
+| 源设置 | Mihomo | Xray JSON |
+| --- | --- | --- |
+| `ipv6=false`、`prefer-ipv6=false` | 顶层和 DNS 均为 false，不配置 IPv6 TUN 地址 | DNS `UseIPv4`，合并后的直连出口 `ForceIPv4`；无全局 IPv6 开关 |
+| 公共 DNS、备用 DNS | 两个代理 DoH | 两个经路由强制代理的 DoH；两种内核的选择/备用时序不完全相同 |
+| 直连 DNS、不用系统 DNS、不回退代理 | 指定直连 DoH，无系统回退 | 无按出站选择 DNS 的同等开关；普通域名继续代理 DoH，专用域名用指定 DNS |
+| `skip-proxy`、`tun-excluded-routes` | 从源值生成精确/通配域名及 IP 规则，TUN 排除同步 | 同步 DIRECT 规则；系统代理绕过和 TUN 排除由外部客户端设置 |
+| `[Host]` | 静态 hosts 和域名专用 DNS | 静态 hosts 和域名专用 DNS |
+| `use-local-host-item-for-proxy=false` | 禁用系统 hosts；静态 Host 没有同等的按代理开关 | 静态 Host 没有同等的按代理开关 |
+| `private-ip-answer=true` | 允许专用 DNS 返回私网地址 | 允许专用 DNS 返回私网地址 |
+| `bypass-system=false` | 不生成系统服务绕过；客户端额外绕过仍需关闭 | 不生成系统服务绕过；捕获范围由外部客户端控制 |
+| UDP 不支持时 REJECT | 对应代理规则后加入 UDP 拒绝，防止落入 DIRECT | 代理出错不回退 DIRECT |
+| STUN IPv4/IPv6 响应伪装 | 无原生等价；端口/域名拦截与浏览器限制 | 无原生等价；端口/域名拦截与浏览器限制 |
+
+IPv6 设置不会修改操作系统网络栈，也不改写订阅中显式指定的 IPv6 节点地址。若需要整台设备禁用 IPv6，须在系统或客户端落实并实测。字段依据：[Mihomo 全局配置](https://wiki.metacubex.one/config/general/)、[Mihomo DNS](https://wiki.metacubex.one/config/dns/)、[Xray 26.3.27 Freedom 实现](https://github.com/XTLS/Xray-core/blob/v26.3.27/infra/conf/freedom.go)。

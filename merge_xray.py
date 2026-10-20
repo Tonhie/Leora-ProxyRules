@@ -4,7 +4,7 @@ No network requests. Synchronize DNS; preserve nodes, streamSettings and balance
 This must run on each subscription response in a server-side integration.
 """
 import argparse,copy,json,pathlib
-from routing_policy import validate_xray_proxy, protected_xray, xray_dns_for_config, dns_outbound, DNS_TAG, DNS_OUT, BOOTSTRAP_TAG
+from routing_policy import validate_xray_proxy, protected_xray, xray_dns_for_config, dns_outbound, DNS_TAG, DNS_OUT, BOOTSTRAP_TAG, xray_direct_settings
 
 def merge_subscription(payload, overlay, proxy_tag='proxy', proxy_balancer=None):
     if overlay.get('routing', {}).get('script'):
@@ -35,7 +35,7 @@ def merge_subscription(payload, overlay, proxy_tag='proxy', proxy_balancer=None)
             raise ValueError('Conflicting DNS outbound tag: ' + DNS_OUT)
         config['outbounds']=[o for o in config['outbounds'] if o.get('tag')!=DNS_OUT]+[dns_outbound()]
         direct=next(o for o in config['outbounds'] if o.get('tag')=='direct')
-        direct.setdefault('settings', {})['domainStrategy']='UseIP'
+        direct.setdefault('settings', {}).update(xray_direct_settings())
         config['dns']=xray_dns_for_config(config)
         validate_xray_proxy(config, proxy_tag, proxy_balancer)
         routing=copy.deepcopy(overlay['routing'])

@@ -127,6 +127,37 @@ class PolicyTests(unittest.TestCase):
         self.x['routing']['balancers'] = [{'tag': 'pool', 'selector': ['proxy'], 'fallbackTag': 'direct-node'}]
         with self.assertRaises(ValueError):merge_subscription(self.x, self.xr, proxy_balancer='pool')
 
+    def test_all_general_settings_are_accounted_for(self):
+        from unittest.mock import patch
+        from routing_policy import general, basic_settings_audit, mihomo_settings, bypass_rules, static_hosts
+        policy = general()
+        self.assertEqual(set(basic_settings_audit()), set(policy))
+        published = yaml.safe_load((ROOT / 'Leora-Clash-Routing.yaml').read_text())
+        for key, value in mihomo_settings().items():
+            self.assertEqual(published[key], value, key)
+        report = json.loads((ROOT / 'conversion-report.json').read_text())
+        self.assertEqual(report['general_settings'], basic_settings_audit())
+        m = merge_config(dict(self.m, ipv6=True, hosts={'stale.example': '::1'}), self.mrules)
+        self.assertFalse(m['ipv6'])
+        self.assertFalse(m['dns']['ipv6'])
+        self.assertNotIn('inet6-address', m['tun'])
+        self.assertEqual(m['hosts'], static_hosts())
+        self.assertEqual(m['tun']['route-exclude-address'], policy['tun-excluded-routes'].split(','))
+        x = merge_subscription(self.x, self.xr)
+        direct = next(o for o in x['outbounds'] if o['tag']=='direct')
+        self.assertEqual(direct['settings']['domainStrategy'], 'ForceIPv4')
+        published_x = json.loads((ROOT / 'Leora-Xray-Routing.json').read_text())
+        self.assertEqual(next(o for o in published_x['outbounds'] if o['tag']=='direct')['settings'], direct['settings'])
+        with patch('routing_policy.general', return_value=dict(policy, ipv6='true')):
+            self.assertTrue(mihomo_settings()['ipv6'])
+            self.assertTrue(mihomo_settings()['dns']['ipv6'])
+        with patch('routing_policy.general', return_value=dict(policy, **{'skip-proxy':'new.example,*.test', 'tun-excluded-routes':'192.0.2.0/24'})):
+            self.assertEqual(bypass_rules(), [('DOMAIN','new.example',False), ('DOMAIN-WILDCARD','*.test',False), ('IP-CIDR','192.0.2.0/24',True)])
+        for change in ({'new-unknown-setting':'true'}, {'prefer-ipv6':'true'}, {'ipv6':'typo'}):
+            with patch('routing_policy.general', return_value=dict(policy, **change)):
+                with self.assertRaises(ValueError):
+                    mihomo_settings()
+
     def test_dns_and_tailnet_are_synced_from_shadowrocket(self):
         from routing_policy import split_dns, TAILNET_RANGES, xray_dns
         policies = split_dns()
@@ -134,7 +165,7 @@ class PolicyTests(unittest.TestCase):
         for domain, resolver in policies.items():
             self.assertEqual(m['dns']['nameserver-policy']['+.' + domain], 'udp://' + resolver + '#DIRECT')
             self.assertIn('+.' + domain, m['dns']['fake-ip-filter'])
-        self.assertEqual(m['tun']['route-exclude-address'], list(TAILNET_RANGES))
+        self.assertEqual(m['tun']['route-exclude-address'], __import__('routing_policy').excluded_routes())
         x = merge_subscription(self.x, self.xr)
         self.assertEqual(x['dns'], xray_dns())
         self.assertTrue(x['dns']['disableFallbackIfMatch'])

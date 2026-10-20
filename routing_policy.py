@@ -1,6 +1,7 @@
 """Mandatory transport policy; these do not spoof STUN or install a packet tunnel."""
 
 import ipaddress
+import re
 from urllib.parse import urlsplit
 from pathlib import Path
 
@@ -45,6 +46,94 @@ def general():
                 for line in section.splitlines() if '=' in line and not line.lstrip().startswith('#'))
 
 
+# Every canonical General option must have an explicit mapping or limitation.
+# Fixed-value options fail closed if changed, instead of silently keeping old behavior.
+GENERAL_MAPPING = {
+    'dns-server': 'Mihomo nameserver; Xray routed DoH',
+    'fallback-dns-server': 'Mihomo nameserver; Xray additional DoH (selection differs)',
+    'direct-dns-server': 'Mihomo direct-nameserver; Xray has no per-outbound DNS selector (uses public proxy DNS)',
+    'dns-direct-system': 'No system DNS fallback',
+    'dns-direct-fallback-proxy': 'Mihomo direct resolver only; Xray per-outbound DNS distinction unavailable',
+    'use-local-host-item-for-proxy': 'No system hosts; static Host entries shared by both engines, no per-proxy Host toggle',
+    'ipv6': 'Mihomo global/DNS IPv6; Xray IPv4 DNS and ForceIPv4 direct dialing; client must prevent uncaptured IPv6',
+    'prefer-ipv6': 'IPv4 only while IPv6 disabled; IPv6 preference mode unsupported',
+    'udp-policy-not-supported-behaviour': 'Mihomo adjacent UDP REJECT guards; Xray proxy errors without DIRECT fallback',
+    'stun-response-ip': 'No native spoofing; scoped STUN block plus browser restriction required',
+    'stun-response-ipv6': 'No native spoofing; scoped STUN block plus browser restriction required',
+    'private-ip-answer': 'Private split DNS answers accepted',
+    'bypass-system': 'No generated system-service bypass; external client capture must be verified',
+    'skip-proxy': 'Canonical DIRECT rules; external system proxy bypass needs client setup',
+    'tun-excluded-routes': 'Mihomo route-exclude-address; Xray DIRECT rules plus external client route exclusions',
+}
+FIXED_GENERAL = {
+    'dns-direct-system': 'false', 'dns-direct-fallback-proxy': 'false',
+    'use-local-host-item-for-proxy': 'false', 'prefer-ipv6': 'false',
+    'udp-policy-not-supported-behaviour': 'REJECT',
+    'stun-response-ip': '127.0.0.1', 'stun-response-ipv6': '::1',
+    'private-ip-answer': 'true', 'bypass-system': 'false',
+}
+
+
+def basic_settings_audit():
+    policy = general()
+    if set(policy) != set(GENERAL_MAPPING):
+        raise ValueError('Unmapped or missing General options: ' + str(set(policy) ^ set(GENERAL_MAPPING)))
+    for key, expected in FIXED_GENERAL.items():
+        if policy[key] != expected:
+            raise ValueError('General option requires a new conversion implementation: ' + key)
+    if policy['ipv6'] not in ('true', 'false'):
+        raise ValueError('Invalid ipv6 boolean')
+    return {k: {'source': v, 'implementation': GENERAL_MAPPING[k]} for k, v in policy.items()}
+
+
+def ipv6_enabled():
+    basic_settings_audit()
+    return general()['ipv6'] == 'true'
+
+
+def excluded_routes():
+    return list(dict.fromkeys(str(ipaddress.ip_network(v.strip()))
+                             for v in general()['tun-excluded-routes'].split(',')))
+
+
+def bypass_rules():
+    rules = []
+    for value in general()['skip-proxy'].split(','):
+        value = value.strip()
+        try:
+            net = ipaddress.ip_network(value)
+            rule = ('IP-CIDR6' if net.version == 6 else 'IP-CIDR', str(net), True)
+        except ValueError:
+            if value.startswith('*.'):
+                rule = ('DOMAIN-WILDCARD', value, False)
+            elif '*' in value or '?' in value:
+                raise ValueError('Unsupported skip-proxy pattern: ' + value)
+            else:
+                rule = ('DOMAIN', value, False)
+        if rule not in rules:
+            rules.append(rule)
+    for value in excluded_routes():
+        rule = ('IP-CIDR6' if ':' in value else 'IP-CIDR', value, True)
+        if rule not in rules:
+            rules.append(rule)
+    return rules
+
+
+def static_hosts():
+    text = (Path(__file__).resolve().parent / 'Leora-ProxyRules.conf').read_text()
+    section = text.split('[Host]', 1)[1].split('[', 1)[0]
+    hosts = {}
+    for line in section.splitlines():
+        if '=' not in line or line.lstrip().startswith('#'):
+            continue
+        domain, value = (v.strip() for v in line.split('=', 1))
+        if not value.startswith('server:'):
+            if '*' in domain:
+                raise ValueError('Static wildcard Host requires explicit conversion: ' + domain)
+            hosts[domain] = str(ipaddress.ip_address(value))
+    return hosts
+
+
 def public_dns():
     policy = general()
     result = []
@@ -83,8 +172,8 @@ def xray_dns_routes():
 
 
 def xray_dns():
-    return {'tag': DNS_TAG, 'hosts': {'localhost': '127.0.0.1'},
-            'queryStrategy': 'UseIPv4' if general()['ipv6']=='false' else 'UseIP',
+    return {'tag': DNS_TAG, 'hosts': static_hosts(),
+            'queryStrategy': 'UseIP' if ipv6_enabled() else 'UseIPv4',
             'disableFallbackIfMatch': True,
             'servers': [
                 {'address': ip, 'domains': ['domain:' + d], 'skipFallback': True, 'finalQuery': True}
@@ -110,8 +199,8 @@ def xray_transport_guards():
 
 
 def local_conditions():
-    domains = {'localhost', 'local'} | set(split_dns())
-    nets = set(general()['tun-excluded-routes'].split(',')) | set(TAILNET_RANGES)
+    domains = {v.removeprefix('*.') for k, v, _ in bypass_rules() if k.startswith('DOMAIN')} | set(split_dns())
+    nets = {v for k, v, _ in bypass_rules() if k.startswith('IP-')} | set(TAILNET_RANGES)
     return domains, nets
 
 
@@ -119,7 +208,8 @@ def is_local_mihomo(rule):
     parts = rule.split(',')
     domains, nets = local_conditions()
     return (len(parts)>=3 and parts[2]=='DIRECT' and
-            ((parts[0] in ('DOMAIN','DOMAIN-SUFFIX') and parts[1] in domains) or
+            ((parts[0]=='DOMAIN-REGEX' and parts[1] in {'^'+re.escape(v).replace(r'\*','.*').replace(r'\?','.')+'$' for k,v,_ in bypass_rules() if k=='DOMAIN-WILDCARD'}) or
+             (parts[0] in ('DOMAIN','DOMAIN-SUFFIX','DOMAIN-WILDCARD') and parts[1].removeprefix('*.') in domains) or
              (parts[0] in ('IP-CIDR','IP-CIDR6') and parts[1] in nets)))
 
 
@@ -127,7 +217,8 @@ def is_local_xray(rule):
     domains, nets = local_conditions()
     return (rule.get('outboundTag')=='direct' and
             ((bool(rule.get('domain')) and set(rule['domain']) <=
-              {'domain:'+d for d in domains} | {'full:localhost'}) or
+              {'domain:'+d for d in domains} | {'full:'+d for d in domains} |
+              {'regexp:^' + re.escape(v).replace(r'\*', '.*').replace(r'\?', '.') + '$' for k,v,_ in bypass_rules() if k=='DOMAIN-WILDCARD'}) or
              (bool(rule.get('ip')) and set(rule['ip']) <= nets)))
 
 
@@ -155,6 +246,10 @@ def xray_dns_for_config(config):
     return dns
 
 
+def xray_direct_settings():
+    return {'domainStrategy': 'UseIP' if ipv6_enabled() else 'ForceIPv4'}
+
+
 def dns_outbound():
     return {'tag': DNS_OUT, 'protocol': 'dns', 'settings': {'nonIPQuery': 'reject'}}
 
@@ -175,13 +270,13 @@ STEAM_PROXY = ('steampowered.com', 'steamcommunity.com', 'steamstatic.com',
 
 def mihomo_settings():
     return {
-        'mode': 'rule', 'ipv6': True,
+        'mode': 'rule', 'ipv6': ipv6_enabled(), 'hosts': static_hosts(),
         'tun': {'enable': True, 'stack': 'mixed', 'auto-route': True,
                 'auto-detect-interface': True, 'strict-route': True,
-                'inet6-address': ['fdfe:dcba:9876::1/126'],
+                **({'inet6-address': ['fdfe:dcba:9876::1/126']} if ipv6_enabled() else {}),
                 'dns-hijack': ['any:53', 'tcp://any:53'],
-                'route-exclude-address': list(TAILNET_RANGES)},
-        'dns': {'enable': True, 'ipv6': general()['ipv6']!='false', 'respect-rules': True,
+                'route-exclude-address': excluded_routes()},
+        'dns': {'enable': True, 'ipv6': ipv6_enabled(), 'respect-rules': True,
                 'use-system-hosts': False, 'direct-nameserver-follow-policy': True,
                 'enhanced-mode': 'fake-ip', 'fake-ip-range': '198.18.0.1/16',
                 'fake-ip-filter': ['+.' + d for d in split_dns()],

@@ -4,7 +4,7 @@ Python 3.10+, pip install PyYAML. No subscription credentials are needed.
 """
 import argparse, concurrent.futures, datetime, hashlib, ipaddress, json, pathlib, re, urllib.request
 import yaml
-from routing_policy import mihomo_settings, protected_mihomo, protected_xray, xray_dns, dns_outbound, mihomo_dns_outbound, STUN_PORTS, public_dns, BOOTSTRAP_DOH
+from routing_policy import mihomo_settings, protected_mihomo, protected_xray, xray_dns, dns_outbound, mihomo_dns_outbound, STUN_PORTS, public_dns, BOOTSTRAP_DOH, bypass_rules, basic_settings_audit, xray_direct_settings
 SOURCE='https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/Leora-ProxyRules.conf'
 DEFAULT_BASE='https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main'
 P=pathlib.Path(__file__).resolve().parent
@@ -67,6 +67,7 @@ def dump(name,obj):
     (P/name).write_text(yaml.safe_dump(obj,allow_unicode=True,sort_keys=False,width=110) if name.endswith('.yaml') else json.dumps(obj,ensure_ascii=False,separators=(',',':'))+'\n')
 
 def run():
+    basic_settings_audit()
     conf=(P/'Leora-ProxyRules.conf').read_text()
     entries=[];in_rules=False
     for line in conf.splitlines():
@@ -96,9 +97,8 @@ def run():
     providers={};clash=[];xr=[]
     conversions=[]
     # SR skip-proxy / excluded local networks, before its Rule section.
-    local_domains=[('DOMAIN','localhost',False),('DOMAIN-SUFFIX','local',False),('DOMAIN-SUFFIX','ts.net',False)]
-    local_ips=[('IP-CIDR',s,True) for s in ['10.0.0.0/8','100.64.0.0/10','127.0.0.0/8','169.254.0.0/16','172.16.0.0/12','192.168.0.0/16']]
-    clash.extend(classic(r)+',DIRECT' if not r[2] else ','.join(classic(r).split(',')[:2])+',DIRECT,no-resolve' for r in local_domains+local_ips)
+    local_rules=bypass_rules()
+    clash.extend(classic(r)+',DIRECT' if not r[2] else ','.join(classic(r).split(',')[:2])+',DIRECT,no-resolve' for r in local_rules)
     def xray_rules(rules,target,label):
         tag={'DIRECT':'direct','PROXY':'proxy','REJECT':'block'}[target]
         # Only coalesce adjacent same-condition rules. Never reorder domains vs IPs.
@@ -112,7 +112,7 @@ def run():
             if xr and xr[-1]['outboundTag']==tag and key in xr[-1] and xr[-1].get('ruleTag')==label:
                 xr[-1][key].extend(vals)
             else:xr.append({'type':'field',key:vals,'outboundTag':tag,'ruleTag':label})
-    xray_rules(local_domains+local_ips,'DIRECT','local-bypass')
+    xray_rules(local_rules,'DIRECT','local-bypass')
     for i,line in enumerate(entries):
         a=line.split(',');typ=a[0]
         if typ=='FINAL':clash.append('MATCH,'+a[1]);xr.append({'type':'field','network':'tcp,udp','outboundTag':{'DIRECT':'direct','PROXY':'proxy','REJECT':'block'}[a[1]],'ruleTag':'final-proxy'});continue
@@ -176,11 +176,11 @@ def run():
     clash=protected_mihomo(clash)
     xr=protected_xray(xr)
     dump('Leora-Clash-Routing.yaml',dict(mihomo_settings(),**{'proxies':[mihomo_dns_outbound()],'rule-providers':providers,'rules':clash}))
-    dump('Leora-Xray-Routing.json',{'dns':xray_dns(),'outbounds':[dns_outbound()],'routing':{'domainStrategy':'IPOnDemand','rules':xr}})
+    dump('Leora-Xray-Routing.json',{'dns':xray_dns(),'outbounds':[dns_outbound(), {'tag':'direct','protocol':'freedom','settings':xray_direct_settings()}],'routing':{'domainStrategy':'IPOnDemand','rules':xr}})
     used={v['url'].split('/providers/')[-1] for v in providers.values() if '/providers/' in v['url']}
     for stale in (P/'providers').glob('leora-*.yaml'):
         if stale.name not in used:stale.unlink()
-    dump('conversion-report.json',{'generated_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'source':SOURCE,'base':ARGS.base,'source_sha256':hashlib.sha256(conf.encode()).hexdigest(),'policy':'Full portable Shadowrocket rules in source order with local bypass, DNS interception and targeted STUN guards', 'privacy':{'public_dns':public_dns(),'bootstrap_dns':BOOTSTRAP_DOH,'stun_ports':list(STUN_PORTS),'native_stun_spoof':False,'browser_webrtc_restriction_required':True},'providers':conversions,'asn_sources':as_urls,'asn_prefix_counts':{n:len(v) for n,v in as_prefix.items()},'xray_rules':len(xr),'upstream_provider_count':sum(not r['url'].startswith(ARGS.base.rstrip('/')+'/providers/') for r in providers.values())})
+    dump('conversion-report.json',{'generated_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'source':SOURCE,'base':ARGS.base,'source_sha256':hashlib.sha256(conf.encode()).hexdigest(),'policy':'Full portable Shadowrocket rules in source order with local bypass, DNS interception and targeted STUN guards', 'general_settings':basic_settings_audit(),'privacy':{'public_dns':public_dns(),'bootstrap_dns':BOOTSTRAP_DOH,'stun_ports':list(STUN_PORTS),'native_stun_spoof':False,'browser_webrtc_restriction_required':True},'providers':conversions,'asn_sources':as_urls,'asn_prefix_counts':{n:len(v) for n,v in as_prefix.items()},'xray_rules':len(xr),'upstream_provider_count':sum(not r['url'].startswith(ARGS.base.rstrip('/')+'/providers/') for r in providers.values())})
     print(json.dumps({'providers':len(providers),'upstream_links':sum(not r['url'].startswith(ARGS.base.rstrip('/')+'/providers/') for r in providers.values()),'converted_providers':sum(r['url'].startswith(ARGS.base.rstrip('/')+'/providers/') for r in providers.values()),'xray_rules':len(xr),'unsupported_count':sum(len(r['unsupported']) for r in conversions)}))
 
 if __name__=='__main__':

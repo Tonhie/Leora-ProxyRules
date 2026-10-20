@@ -160,6 +160,8 @@ def run_case(binary, core, mode, supported, work, proxy, direct_tcp, direct_udp,
         # Exercise real routing without changing the machine's tunnel/DNS settings.
         config['tun'] = {'enable': False}
         config['dns'] = {'enable': False}
+        # Test-only loopback targets; production merge replaces inherited hosts.
+        config['hosts'] = base['hosts']
         config['log-level'] = 'debug'
         config['external-controller'] = ''
         path = work / 'config.yaml'
@@ -174,8 +176,6 @@ def run_case(binary, core, mode, supported, work, proxy, direct_tcp, direct_udp,
         config = merge_subscription(base, overlay) if mode else dict(base,
             outbounds=base['outbounds'] + [{'tag': 'direct', 'protocol': 'freedom'}, {'tag': 'block', 'protocol': 'blackhole'}], routing=overlay['routing'])
         config['dns'] = {'hosts': {'dl.steam.clngaa.com': '127.0.0.1', 'cache1-sha1.steamcontent.com': '127.0.0.1', 'peer.tail.ts.net': '127.0.0.1', 'proxy.example': '127.0.0.1', 'direct.example': '127.0.0.1'}}
-        if mode:
-            next(o for o in config['outbounds'] if o['tag']=='direct')['settings'] = {'domainStrategy': 'UseIPv4'}
         path = work / 'config.json'
         path.write_text(json.dumps(config))
         command = [binary, 'run', '-c', str(path)]

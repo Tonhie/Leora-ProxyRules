@@ -20,7 +20,7 @@ def merge_config(payload, routing, proxy_name='PROXY'):
     # Replace TUN settings: inherited include/exclude filters could silently
     # bypass capture. Client-managed VPN/TUN still needs its own verification.
     preset = mihomo_settings()
-    for key in ('tun', 'dns', 'ipv6', 'mode'):
+    for key in ('tun', 'dns', 'ipv6', 'mode', 'hosts'):
         result[key] = copy.deepcopy(preset[key])
     result['dns']['nameserver'] = [u.replace('#PROXY', '#' + proxy_name)
                                      for u in result['dns']['nameserver']]
