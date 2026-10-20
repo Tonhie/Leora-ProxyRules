@@ -1,5 +1,90 @@
 """Mandatory transport policy; these do not spoof STUN or install a packet tunnel."""
 
+import ipaddress
+from pathlib import Path
+
+TAILNET_RANGES = ('100.64.0.0/10', 'fd7a:115c:a1e0::/48')
+DNS_TAG = 'leora-dns'
+DNS_OUT = 'leora-dns-out'
+
+
+def split_dns():
+    """Read the canonical server: mappings from the Shadowrocket Host section."""
+    text = (Path(__file__).resolve().parent / 'Leora-ProxyRules.conf').read_text()
+    section = text.split('[Host]', 1)[1].split('[', 1)[0]
+    result = {}
+    for line in section.splitlines():
+        if '=' not in line or line.lstrip().startswith('#'):
+            continue
+        domain, value = (x.strip() for x in line.split('=', 1))
+        if not value.startswith('server:'):
+            continue
+        domain = domain.removeprefix('*.')
+        resolver = str(ipaddress.ip_address(value.removeprefix('server:')))
+        if domain in result and result[domain] != resolver:
+            raise ValueError('Conflicting split DNS mapping: ' + domain)
+        result[domain] = resolver
+    if result.get('ts.net') != '100.100.100.100':
+        raise ValueError('Expected Tailscale Quad100 mapping in canonical Host section')
+    return result
+
+
+def mihomo_local_rules():
+    return ([f'DOMAIN-SUFFIX,{domain},DIRECT' for domain in split_dns()] +
+            [f'IP-CIDR{6 if ":" in cidr else ""},{cidr},DIRECT,no-resolve' for cidr in TAILNET_RANGES])
+
+
+def xray_local_rules():
+    resolvers = list(dict.fromkeys(list(split_dns().values()) + ['223.5.5.5']))
+    return [
+        {'type': 'field', 'inboundTag': [DNS_TAG], 'network': 'tcp,udp', 'port': '53',
+         'ip': resolvers, 'outboundTag': 'direct', 'ruleTag': 'split-dns-direct'},
+        {'type': 'field', 'domain': ['domain:' + d for d in split_dns()],
+         'outboundTag': 'direct', 'ruleTag': 'split-domain-direct'},
+        {'type': 'field', 'ip': list(TAILNET_RANGES),
+         'outboundTag': 'direct', 'ruleTag': 'tailnet-ip'},
+        {'type': 'field', 'network': 'tcp,udp', 'port': '53',
+         'outboundTag': DNS_OUT, 'ruleTag': 'dns-intercept'},
+    ]
+
+
+def xray_dns():
+    return {'tag': DNS_TAG, 'hosts': {'localhost': '127.0.0.1'},
+            'disableFallbackIfMatch': True,
+            'servers': [
+                {'address': ip, 'domains': ['domain:' + d], 'skipFallback': True, 'finalQuery': True}
+                for d, ip in split_dns().items()
+            ] + ['https://1.1.1.1/dns-query', 'https://1.0.0.1/dns-query']}
+
+
+def xray_dns_for_config(config):
+    dns = xray_dns()
+    domains = set()
+    private = tuple(split_dns())
+    for outbound in config['outbounds']:
+        settings = outbound.get('settings', {})
+        for server in settings.get('servers', []) + settings.get('vnext', []):
+            host = server.get('address', '')
+            if not isinstance(host, str) or not host:
+                continue
+            host = host.lower().rstrip('.')
+            try:
+                ipaddress.ip_address(host)
+                continue
+            except ValueError:
+                pass
+            if not any(host == d or host.endswith('.' + d) for d in private):
+                domains.add('full:' + host)
+    if domains:
+        dns['servers'].insert(0, {'address': '223.5.5.5', 'domains': sorted(domains),
+                                  'skipFallback': True, 'finalQuery': True})
+    return dns
+
+
+def dns_outbound():
+    return {'tag': DNS_OUT, 'protocol': 'dns', 'settings': {'nonIPQuery': 'reject'}}
+
+
 # Curated mainland CDN endpoints; avoid broad SteamCN entries that include the store.
 STEAM_DOWNLOADS = (
     'dl.steam.clngaa.com', 'dl.steam.ksyna.com', 'st.dl.bscstorage.net',
@@ -45,9 +130,12 @@ def mihomo_settings():
         'tun': {'enable': True, 'stack': 'mixed', 'auto-route': True,
                 'auto-detect-interface': True, 'strict-route': True,
                 'inet6-address': ['fdfe:dcba:9876::1/126'],
-                'dns-hijack': ['any:53', 'tcp://any:53']},
+                'dns-hijack': ['any:53', 'tcp://any:53'],
+                'route-exclude-address': list(TAILNET_RANGES)},
         'dns': {'enable': True, 'ipv6': True, 'respect-rules': True,
                 'enhanced-mode': 'fake-ip', 'fake-ip-range': '198.18.0.1/16',
+                'fake-ip-filter': ['+.' + d for d in split_dns()],
+                'nameserver-policy': {'+.' + d: 'udp://' + ip + '#DIRECT' for d, ip in split_dns().items()},
                 'default-nameserver': ['223.5.5.5'],
                 'proxy-server-nameserver': ['https://dns.alidns.com/dns-query'],
                 'nameserver': ['https://1.1.1.1/dns-query#PROXY',
@@ -59,11 +147,11 @@ def protected_mihomo(rules, proxy_name='PROXY'):
     rejects = [r for r in rules if r != 'NETWORK,udp,REJECT' and
                (r.split(',')[-1] in ('REJECT', 'REJECT-DROP') or
                 (r.endswith(',no-resolve') and r.split(',')[-2] in ('REJECT', 'REJECT-DROP')))]
-    return rejects + mihomo_rules(proxy_name)
+    return mihomo_local_rules() + rejects + mihomo_rules(proxy_name)
 
 
 def protected_xray(rules):
-    return [r for r in rules if r.get('outboundTag') == 'block'] + xray_rules()
+    return xray_local_rules() + [r for r in rules if r.get('outboundTag') == 'block'] + xray_rules()
 
 
 def validate_xray_proxy(config, proxy_tag, proxy_balancer):

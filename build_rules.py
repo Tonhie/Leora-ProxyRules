@@ -4,7 +4,7 @@ Python 3.10+, pip install PyYAML. No subscription credentials are needed.
 """
 import argparse, concurrent.futures, datetime, hashlib, ipaddress, json, pathlib, re, urllib.request
 import yaml
-from routing_policy import mihomo_settings, protected_mihomo, protected_xray
+from routing_policy import mihomo_settings, protected_mihomo, protected_xray, xray_dns, dns_outbound
 SOURCE='https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/Leora-ProxyRules.conf'
 DEFAULT_BASE='https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main'
 P=pathlib.Path(__file__).resolve().parent
@@ -163,7 +163,7 @@ def run():
     clash=protected_mihomo(clash)
     xr=protected_xray(xr)
     dump('Leora-Clash-Routing.yaml',dict(mihomo_settings(),**{'rule-providers':providers,'rules':clash}))
-    dump('Leora-Xray-Routing.json',{'routing':{'domainStrategy':'IPOnDemand','rules':xr}})
+    dump('Leora-Xray-Routing.json',{'dns':xray_dns(),'outbounds':[dns_outbound()],'routing':{'domainStrategy':'IPOnDemand','rules':xr}})
     used={v['url'].split('/providers/')[-1] for v in providers.values() if '/providers/' in v['url']}
     for stale in (P/'providers').glob('leora-*.yaml'):
         if stale.name not in used:stale.unlink()

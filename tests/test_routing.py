@@ -5,7 +5,7 @@ import unittest
 import yaml
 from merge_mihomo import merge_config
 from merge_xray import merge_subscription
-from routing_policy import STEAM_DOWNLOADS, STEAM_DOWNLOAD_SUFFIXES, STEAM_PROXY, mihomo_rules, xray_rules
+from routing_policy import STEAM_DOWNLOADS, STEAM_DOWNLOAD_SUFFIXES, STEAM_PROXY, mihomo_rules, xray_rules, mihomo_local_rules, xray_dns
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -23,8 +23,9 @@ class PolicyTests(unittest.TestCase):
     def test_mihomo_default_is_ads_then_protection_and_steam_then_proxy(self):
         original = copy.deepcopy(self.m)
         result = merge_config(self.m, self.mrules)
-        self.assertEqual(result['rules'][0], 'DOMAIN,ads.example,REJECT')
-        self.assertEqual(result['rules'][1:3], ['NETWORK,udp,PROXY', 'NETWORK,udp,REJECT'])
+        offset = len(mihomo_local_rules())
+        self.assertEqual(result['rules'][offset], 'DOMAIN,ads.example,REJECT')
+        self.assertEqual(result['rules'][offset+1:offset+3], ['NETWORK,udp,PROXY', 'NETWORK,udp,REJECT'])
         self.assertEqual(result['rules'][-1], 'MATCH,PROXY')
         self.assertNotIn('MATCH,DIRECT', result['rules'])
         self.assertTrue(result['tun']['enable'])
@@ -32,17 +33,18 @@ class PolicyTests(unittest.TestCase):
         self.assertEqual(original, self.m)
         self.assertEqual(merge_config(result, self.mrules), result)
 
-    def test_xray_default_protects_arrays_preserving_api_and_dns(self):
+    def test_xray_protects_arrays_preserving_api_and_syncing_dns(self):
         self.x['dns'] = {'servers': ['localhost']}
         original = copy.deepcopy(self.x)
         result = merge_subscription([self.x], self.xr)[0]
         rules = result['routing']['rules']
         self.assertEqual(rules[0]['inboundTag'], ['api'])
-        self.assertEqual(rules[1]['outboundTag'], 'block')
-        self.assertEqual(rules[2]['network'], 'udp')
+        block = next(i for i,r in enumerate(rules) if r.get('outboundTag')=='block')
+        udp = next(i for i,r in enumerate(rules) if r.get('ruleTag')=='udp-proxy')
+        self.assertLess(block, udp)
         self.assertEqual(rules[-1]['outboundTag'], 'proxy')
         self.assertEqual(self.x, original)
-        self.assertEqual(result['dns'], self.x['dns'])
+        self.assertEqual(result['dns'], xray_dns())
 
     def test_steam_download_exception_has_transport_and_port_limits(self):
         rules = mihomo_rules()
@@ -94,7 +96,7 @@ class PolicyTests(unittest.TestCase):
         self.assertTrue(result['dns']['nameserver'][0].endswith('#NODE'))
         self.x['routing']['balancers'] = [{'tag': 'pool', 'selector': ['proxy']}]
         result = merge_subscription(self.x, self.xr, proxy_balancer='pool')
-        self.assertEqual(result['routing']['rules'][2]['balancerTag'], 'pool')
+        self.assertEqual(next(r for r in result['routing']['rules'] if r.get('ruleTag')=='udp-proxy')['balancerTag'], 'pool')
 
     def test_direct_proxy_group_and_dynamic_members_are_rejected(self):
         for group in ({'proxies': ['DIRECT']}, {'use': ['sub']}, {'proxies': ['GROUP']}):
@@ -107,6 +109,43 @@ class PolicyTests(unittest.TestCase):
         with self.assertRaises(ValueError):merge_subscription(self.x, self.xr, 'direct-node')
         self.x['routing']['balancers'] = [{'tag': 'pool', 'selector': ['proxy'], 'fallbackTag': 'direct-node'}]
         with self.assertRaises(ValueError):merge_subscription(self.x, self.xr, proxy_balancer='pool')
+
+    def test_dns_and_tailnet_are_synced_from_shadowrocket(self):
+        from routing_policy import split_dns, TAILNET_RANGES, xray_dns
+        policies = split_dns()
+        m = merge_config(self.m, self.mrules)
+        for domain, resolver in policies.items():
+            self.assertEqual(m['dns']['nameserver-policy']['+.' + domain], 'udp://' + resolver + '#DIRECT')
+            self.assertIn('+.' + domain, m['dns']['fake-ip-filter'])
+        self.assertEqual(m['tun']['route-exclude-address'], list(TAILNET_RANGES))
+        x = merge_subscription(self.x, self.xr)
+        self.assertEqual(x['dns'], xray_dns())
+        self.assertTrue(x['dns']['disableFallbackIfMatch'])
+        for server in x['dns']['servers'][:-2]:
+            self.assertTrue(server['skipFallback'])
+            self.assertTrue(server['finalQuery'])
+        tags = [r.get('ruleTag') for r in x['routing']['rules']]
+        self.assertLess(tags.index('split-domain-direct'), tags.index('udp-proxy'))
+        self.assertLess(tags.index('split-dns-direct'), tags.index('dns-intercept'))
+        self.assertIn('100.64.0.0/10', TAILNET_RANGES)
+        self.assertIn('fd7a:115c:a1e0::/48', TAILNET_RANGES)
+        source=(ROOT/'Leora-ProxyRules.conf').read_text()
+        self.assertIn('100.64.0.0/10', source.split('tun-excluded-routes = ',1)[1].splitlines()[0])
+        self.assertIn('IP-CIDR6,fd7a:115c:a1e0::/48,DIRECT,no-resolve', source)
+        self.assertLess(tags.index('tailnet-ip'), tags.index('dns-intercept'))
+
+    def test_proxy_hostname_bootstrap_is_specific_and_private_nodes_stay_private(self):
+        self.x['outbounds'][0]['settings'] = {'servers': [
+            {'address': 'node.example.com'}, {'address': 'NODE.TAIL.TS.NET.'}]}
+        result = merge_subscription(self.x, self.xr)
+        bootstrap = result['dns']['servers'][0]
+        self.assertEqual(bootstrap['address'], '223.5.5.5')
+        self.assertEqual(bootstrap['domains'], ['full:node.example.com'])
+        self.assertTrue(bootstrap['skipFallback'])
+
+    def test_reserved_dns_inbound_tag_cannot_be_user_traffic(self):
+        self.x['inbounds'] = [{'tag': 'leora-dns', 'protocol': 'socks'}]
+        with self.assertRaises(ValueError):merge_subscription(self.x, self.xr)
 
     def test_custom_script_cannot_override_protection(self):
         self.xr['routing']['script'] = 'custom.lua'

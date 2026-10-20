@@ -146,7 +146,7 @@ def run_case(binary, core, mode, supported, work, proxy, direct_tcp, direct_udp,
     if core == 'mihomo':
         node = {'name': 'PROXY', 'type': 'socks5' if supported else 'http',
                 'server': '127.0.0.1', 'port': proxy_port, 'udp': supported}
-        base = {'socks-port': port, 'bind-address': '127.0.0.1', 'proxies': [node], 'hosts': {'dl.steam.clngaa.com': '127.0.0.1', 'cache1-sha1.steamcontent.com': '127.0.0.1'}}
+        base = {'socks-port': port, 'bind-address': '127.0.0.1', 'proxies': [node], 'hosts': {'dl.steam.clngaa.com': '127.0.0.1', 'cache1-sha1.steamcontent.com': '127.0.0.1', 'peer.tail.ts.net': '127.0.0.1'}}
         routing = {'rules': ['MATCH,DIRECT', 'DOMAIN,stun.ads.localhost,REJECT']}
         config = merge_config(base, routing) if mode else dict(base, rules=routing['rules'])
         # Exercise real routing without changing the machine's tunnel/DNS settings.
@@ -165,7 +165,7 @@ def run_case(binary, core, mode, supported, work, proxy, direct_tcp, direct_udp,
              'settings': {'udp': True, 'auth': 'noauth'}}]}
         config = merge_subscription(base, overlay) if mode else dict(base,
             outbounds=base['outbounds'] + [{'tag': 'direct', 'protocol': 'freedom'}, {'tag': 'block', 'protocol': 'blackhole'}], routing=overlay['routing'])
-        config['dns'] = {'hosts': {'dl.steam.clngaa.com': '127.0.0.1', 'cache1-sha1.steamcontent.com': '127.0.0.1'}}
+        config['dns'] = {'hosts': {'dl.steam.clngaa.com': '127.0.0.1', 'cache1-sha1.steamcontent.com': '127.0.0.1', 'peer.tail.ts.net': '127.0.0.1'}}
         if mode:
             next(o for o in config['outbounds'] if o['tag']=='direct')['settings'] = {'domainStrategy': 'UseIPv4'}
         path = work / 'config.json'
@@ -227,6 +227,13 @@ def run_case(binary, core, mode, supported, work, proxy, direct_tcp, direct_udp,
                 before_proxy_tcp = proxy.hits
                 assert send_tcp(port, target_tcp, 'stun1.localhost'), 'STUN domain was not proxied'
                 assert proxy.hits > before_proxy_tcp
+            if mode:
+                before_proxy = (proxy.hits, proxy_hits[0])
+                before_direct = (direct_tcp.hits, direct_hits[0])
+                assert send_tcp(port, target_tcp, 'peer.tail.ts.net'), 'Tailnet TCP was not direct'
+                assert send_udp(port, target_udp, 'peer.tail.ts.net'), 'Tailnet UDP was not direct'
+                assert before_proxy == (proxy.hits, proxy_hits[0]), 'Tailnet traffic reached public proxy'
+                assert direct_tcp.hits > before_direct[0] and direct_hits[0] > before_direct[1]
             if mode and supported:
                 before_proxy_tcp = proxy.hits
                 send_tcp(port, 80, 'dl.steam.clngaa.com')

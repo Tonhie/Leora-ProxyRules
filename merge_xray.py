@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Merge the ordered routing overlay into a local Xray JSON subscription.
-No network requests. Preserve node credentials, streamSettings and balancers.
+No network requests. Synchronize DNS; preserve nodes, streamSettings and balancers.
 This must run on each subscription response in a server-side integration.
 """
 import argparse,copy,json,pathlib
-from routing_policy import validate_xray_proxy, protected_xray
+from routing_policy import validate_xray_proxy, protected_xray, xray_dns_for_config, dns_outbound, DNS_TAG, DNS_OUT
 
 def merge_subscription(payload, overlay, proxy_tag='proxy', proxy_balancer=None):
     if overlay.get('routing', {}).get('script'):
@@ -15,6 +15,8 @@ def merge_subscription(payload, overlay, proxy_tag='proxy', proxy_balancer=None)
     for config in configs:
         if not isinstance(config,dict) or not isinstance(config.get('outbounds'),list):
             raise ValueError('Expected complete Xray config object(s) with outbounds')
+        if any(i.get('tag') == DNS_TAG for i in config.get('inbounds', [])):
+            raise ValueError('Reserved DNS inbound tag: ' + DNS_TAG)
         tags={x.get('tag') for x in config['outbounds']}
         original_routing=config.get('routing',{})
         balancers=original_routing.get('balancers',[])
@@ -29,6 +31,12 @@ def merge_subscription(payload, overlay, proxy_tag='proxy', proxy_balancer=None)
             else:
                 out=next(x for x in config['outbounds'] if x.get('tag')==tag)
                 if out.get('protocol')!=protocol:raise ValueError('Conflicting '+tag+' outbound protocol')
+        if DNS_OUT in tags and next(o for o in config['outbounds'] if o.get('tag')==DNS_OUT).get('protocol')!='dns':
+            raise ValueError('Conflicting DNS outbound tag: ' + DNS_OUT)
+        config['outbounds']=[o for o in config['outbounds'] if o.get('tag')!=DNS_OUT]+[dns_outbound()]
+        direct=next(o for o in config['outbounds'] if o.get('tag')=='direct')
+        direct.setdefault('settings', {})['domainStrategy']='UseIP'
+        config['dns']=xray_dns_for_config(config)
         validate_xray_proxy(config, proxy_tag, proxy_balancer)
         routing=copy.deepcopy(overlay['routing'])
         routing['rules']=protected_xray(routing['rules'])

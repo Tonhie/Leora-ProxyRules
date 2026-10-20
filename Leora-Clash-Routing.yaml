@@ -11,12 +11,31 @@ tun:
   dns-hijack:
   - any:53
   - tcp://any:53
+  route-exclude-address:
+  - 100.64.0.0/10
+  - fd7a:115c:a1e0::/48
 dns:
   enable: true
   ipv6: true
   respect-rules: true
   enhanced-mode: fake-ip
   fake-ip-range: 198.18.0.1/16
+  fake-ip-filter:
+  - +.ts.net
+  - +.tongji.edu.cn
+  - +.tsinghua.edu.cn
+  - +.pku.edu.cn
+  - +.fudan.edu.cn
+  - +.sjtu.edu.cn
+  - +.buaa.edu.cn
+  nameserver-policy:
+    +.ts.net: udp://100.100.100.100#DIRECT
+    +.tongji.edu.cn: udp://202.120.190.208#DIRECT
+    +.tsinghua.edu.cn: udp://166.111.8.28#DIRECT
+    +.pku.edu.cn: udp://162.105.129.122#DIRECT
+    +.fudan.edu.cn: udp://202.120.224.26#DIRECT
+    +.sjtu.edu.cn: udp://202.120.2.100#DIRECT
+    +.buaa.edu.cn: udp://202.112.128.51#DIRECT
   default-nameserver:
   - 223.5.5.5
   proxy-server-nameserver:
@@ -54,6 +73,15 @@ rule-providers:
     path: ./ruleset/leora-03.yaml
     interval: 86400
 rules:
+- DOMAIN-SUFFIX,ts.net,DIRECT
+- DOMAIN-SUFFIX,tongji.edu.cn,DIRECT
+- DOMAIN-SUFFIX,tsinghua.edu.cn,DIRECT
+- DOMAIN-SUFFIX,pku.edu.cn,DIRECT
+- DOMAIN-SUFFIX,fudan.edu.cn,DIRECT
+- DOMAIN-SUFFIX,sjtu.edu.cn,DIRECT
+- DOMAIN-SUFFIX,buaa.edu.cn,DIRECT
+- IP-CIDR,100.64.0.0/10,DIRECT,no-resolve
+- IP-CIDR6,fd7a:115c:a1e0::/48,DIRECT,no-resolve
 - RULE-SET,leora-00,REJECT
 - RULE-SET,leora-01,REJECT
 - RULE-SET,leora-02,REJECT
