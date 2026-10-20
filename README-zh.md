@@ -92,7 +92,7 @@ python -m pip install -r requirements.txt
 python build_rules.py --base https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main
 ```
 
-生成器通过上面的原规则 Raw 地址读取根目录 `Leora-ProxyRules.conf`，然后读取远程列表和 ASN 前缀。修改原规则时，先提交并推送根目录文件；`source/` 中的文件仅作快照，修改它不会触发重建。脚本，校验规则类型，优先引用逐项等价的上游文件（或等价子集），仅转换无法安全复用的部分。必需来源获取失败或出现新规则类型时停止，不静默删除规则。若上游需要认证，本脚本不支持、也不会索要订阅凭证。
+生成器通过上面的原规则 Raw 地址读取根目录 `Leora-ProxyRules.conf`，然后读取远程列表和 ASN 前缀。修改原规则时，先提交并推送根目录文件；`source/` 中的文件仅作快照，修改它不会触发重建。脚本会校验规则类型，优先引用逐项等价的上游文件（或等价子集），仅转换无法安全复用的部分。必需来源获取失败或出现新规则类型时停止，不静默删除规则。若上游需要认证，本脚本不支持、也不会索要订阅凭证。
 
 仓库附带 `.github/workflows/build-rules.yml`。Actions 支持手动 `Refresh Leora rules → Run workflow`，以及源 conf／生成器变更后重建。没有启用定时计划。若仓库禁止 Actions 写入，可本地运行后手动提交生成文件。它会写入本仓库的生成文件，不会修改网站。
 
