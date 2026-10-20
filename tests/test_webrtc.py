@@ -66,6 +66,18 @@ class XrayTests(unittest.TestCase):
         self.assertNotIn('port', rule)
         self.assertNotIn('protocol', rule)
 
+    def test_rejections_precede_guard_even_after_an_earlier_direct_rule(self):
+        reject = {'type': 'field', 'domain': ['full:ads.example'], 'outboundTag': 'block'}
+        self.overlay['routing']['rules'].append(reject)
+        for mode in ('udp', 'strict'):
+            out = merge_subscription(self.payload, self.overlay, 'node', webrtc=mode)
+            rules = out['routing']['rules']
+            self.assertEqual(rules[1], reject)  # API remains first.
+            self.assertEqual(rules[2]['outboundTag'], 'node')
+            self.assertEqual(rules[-2]['outboundTag'], 'direct')
+        out = merge_subscription(self.payload, self.overlay, 'node')
+        self.assertEqual(out['routing']['rules'][-1], reject)  # No opt-in: no reordering.
+
     def test_direct_proxy_target_and_balancer_fallback_are_rejected(self):
         self.payload['outbounds'][0]['protocol'] = 'freedom'
         with self.assertRaises(ValueError):
@@ -119,6 +131,18 @@ class MihomoTests(unittest.TestCase):
         self.assertTrue(out['tun']['inet6-address'])
         self.assertEqual(out['dns']['nameserver'][0], 'https://1.1.1.1/dns-query#PROXY')
         self.assertEqual(merge_config(out, self.routing, mode='strict'), out)
+
+    def test_ad_rejections_precede_guard_and_keep_provider_references(self):
+        blocks = ['RULE-SET,ads,REJECT', 'DOMAIN,other.example,REJECT-DROP']
+        self.routing['rules'] += blocks
+        self.routing['rule-providers'] = {'ads': {'type': 'file', 'path': 'ads.yaml', 'behavior': 'domain'}}
+        for mode in ('udp', 'strict'):
+            out = merge_config(self.payload, self.routing, mode=mode)
+            self.assertEqual(out['rules'][:2], blocks)
+            self.assertEqual(out['rules'][2:4], mihomo_rules(mode)[:2])
+            self.assertIn('ads', out['rule-providers'])
+            self.assertEqual(out['rules'][-2:], self.routing['rules'][:2])
+            self.assertEqual(merge_config(out, self.routing, mode=mode), out)
 
     def test_direct_group_member_and_provider_group_fail(self):
         for override in [{'proxies': ['node', 'DIRECT']}, {'use': ['subscription']},

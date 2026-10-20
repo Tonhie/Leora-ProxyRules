@@ -33,7 +33,9 @@ def merge_subscription(payload, overlay, proxy_tag='proxy', proxy_balancer=None,
             validate_xray_proxy(config, proxy_tag, proxy_balancer)
         routing=copy.deepcopy(overlay['routing'])
         if webrtc is not None:
-            routing['rules']=xray_rules(webrtc)+routing['rules']
+            rejections=[r for r in routing['rules'] if r.get('outboundTag')=='block']
+            remaining=[r for r in routing['rules'] if r.get('outboundTag')!='block']
+            routing['rules']=rejections+xray_rules(webrtc)+remaining
         if balancers:routing['balancers']=copy.deepcopy(balancers)
         for r in routing['rules']:
             if r.get('outboundTag')=='proxy':

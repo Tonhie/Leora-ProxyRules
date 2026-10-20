@@ -26,13 +26,15 @@ def merge_config(payload, routing, proxy_name='PROXY', mode='udp'):
     providers.update(copy.deepcopy(routing.get('rule-providers', {})))
     # Leora uses PROXY as its public proxy policy. Preserve DIRECT and REJECT.
     rules = []
+    rejections = []
     for rule in routing['rules']:
         parts = rule.split(',')
         policy_index = -2 if parts[-1] == 'no-resolve' else -1
         if parts[policy_index] == 'PROXY':
             parts[policy_index] = proxy_name
-        rules.append(','.join(parts))
-    result['rules'] = guard + rules
+        destination = rejections if parts[policy_index] in ('REJECT', 'REJECT-DROP') else rules
+        destination.append(','.join(parts))
+    result['rules'] = rejections + guard + rules
     return result
 
 

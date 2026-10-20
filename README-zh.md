@@ -28,7 +28,7 @@ python3 merge_mihomo.py --input original.yaml --output protected.yaml --webrtc u
 python3 merge_xray.py --input original.json --output protected.json --webrtc udp
 ```
 
-`udp` 强制代理全部已接管 UDP，并防止 UDP 不支持时落入直连；其他 TCP 保留分流。更严格时将 `udp` 改为 `strict`，全部已接管 TCP/UDP 走代理，会覆盖原分流。必须启用客户端 TUN/VPN 并接管 IPv4/IPv6；仅系统代理不足。详细用法、配置模板和限制见 [WEBRTC.md](WEBRTC.md)。
+两档都先执行广告拒绝规则。`udp` 将其余已接管 UDP 强制代理，其他 TCP 保留分流；`strict` 将其余 TCP/UDP 全部代理，保留广告拦截但取消直连。必须启用客户端 TUN/VPN 并接管 IPv4/IPv6；仅系统代理不足。详细用法、配置模板和限制见 [WEBRTC.md](WEBRTC.md)。
 
 ## 更新
 

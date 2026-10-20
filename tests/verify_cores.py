@@ -100,12 +100,13 @@ def connect_socks(port, command, target_port, host=None):
     return sock, bound_port
 
 
-def send_udp(port, target_port):
+def send_udp(port, target_port, host=None):
     control, relay_port = connect_socks(port, 3, 0)
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
             sock.settimeout(.6)
-            packet = b'\x00\x00\x00\x01\x7f\x00\x00\x01' + struct.pack('!H', target_port) + STUN
+            destination = bytes([1, 127, 0, 0, 1]) if host is None else bytes([3, len(host)]) + host.encode()
+            packet = b'\x00\x00\x00' + destination + struct.pack('!H', target_port) + STUN
             sock.sendto(packet, ('127.0.0.1', relay_port))
             try:
                 return sock.recvfrom(65535)[0].endswith(STUN)
@@ -139,12 +140,14 @@ def run_case(binary, core, mode, supported, work, proxy, direct_tcp, direct_udp,
     target_tcp = direct_tcp.server_address[1]
     target_udp = direct_udp.getsockname()[1]
     proxy_port = proxy.server_address[1] if supported else free_port()
-    overlay = {'routing': {'rules': [{'type': 'field', 'network': 'tcp,udp', 'outboundTag': 'direct'}]}}
+    overlay = {'routing': {'rules': [
+        {'type': 'field', 'network': 'tcp,udp', 'outboundTag': 'direct'},
+        {'type': 'field', 'domain': ['full:stun.ads.localhost'], 'outboundTag': 'block'}]}}
     if core == 'mihomo':
         node = {'name': 'PROXY', 'type': 'socks5' if supported else 'http',
                 'server': '127.0.0.1', 'port': proxy_port, 'udp': supported}
         base = {'socks-port': port, 'bind-address': '127.0.0.1', 'proxies': [node]}
-        routing = {'rules': ['MATCH,DIRECT']}
+        routing = {'rules': ['MATCH,DIRECT', 'DOMAIN,stun.ads.localhost,REJECT']}
         config = merge_config(base, routing, mode=mode) if mode else dict(base, rules=routing['rules'])
         # Exercise real routing without changing the machine's tunnel/DNS settings.
         config['tun'] = {'enable': False}
@@ -178,6 +181,22 @@ def run_case(binary, core, mode, supported, work, proxy, direct_tcp, direct_udp,
                     time.sleep(.03)
             else:
                 raise AssertionError('Core listener did not start')
+            if mode is None:
+                # Listening precedes OnRunning in Mihomo. Establish the negative
+                # control's data path before measuring it; guarded checks below
+                # still send once and never retry away a leak assertion.
+                for _ in range(10):
+                    if send_udp(port, target_udp):
+                        break
+                else:
+                    raise AssertionError('Negative-control UDP data path did not become ready')
+            if mode:
+                before_proxy = (proxy.hits, proxy_hits[0])
+                before_direct = (direct_tcp.hits, direct_hits[0])
+                assert not send_tcp(port, target_tcp, 'stun.ads.localhost'), 'Ad TCP escaped REJECT'
+                assert not send_udp(port, target_udp, 'stun.ads.localhost'), 'Ad UDP escaped REJECT'
+                assert before_proxy == (proxy.hits, proxy_hits[0]), 'Ad reached the proxy'
+                assert before_direct == (direct_tcp.hits, direct_hits[0]), 'Ad reached DIRECT'
             before_direct_udp, before_proxy_udp = direct_hits[0], proxy_hits[0]
             received = send_udp(port, target_udp)
             if mode:

@@ -1,6 +1,7 @@
-# Strict overlay: merge into a complete configuration with a real PROXY node/group.
+# Strict guard only: use merge_mihomo.py to retain the full routing ad-block rules.
 # UDP failures must hit REJECT before any other routing rule.
-# See WEBRTC.md. Replaces DNS/TUN settings; does not contain proxy nodes.
+# Manual order: ad REJECT rules, these guards, then remaining routing rules.
+# See WEBRTC.md. Replaces DNS/TUN settings; contains no nodes or ad rules.
 mode: rule
 ipv6: true
 tun:
