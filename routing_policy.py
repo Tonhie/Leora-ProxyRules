@@ -12,7 +12,7 @@ DNS_OUT = 'leora-dns-out'
 
 def split_dns():
     """Read the canonical server: mappings from the Shadowrocket Host section."""
-    text = (Path(__file__).resolve().parent / 'Leora-ProxyRules.conf').read_text()
+    text = (Path(__file__).resolve().parent / 'Leora-ProxyRules.conf').read_text(encoding='utf-8')
     section = text.split('[Host]', 1)[1].split('[', 1)[0]
     result = {}
     for line in section.splitlines():
@@ -40,7 +40,7 @@ BOOTSTRAP_DOH = 'https://223.5.5.5/dns-query'
 
 
 def general():
-    text = (Path(__file__).resolve().parent / 'Leora-ProxyRules.conf').read_text()
+    text = (Path(__file__).resolve().parent / 'Leora-ProxyRules.conf').read_text(encoding='utf-8')
     section = text.split('[General]', 1)[1].split('[', 1)[0]
     return dict(tuple(v.strip() for v in line.split('=', 1))
                 for line in section.splitlines() if '=' in line and not line.lstrip().startswith('#'))
@@ -120,7 +120,7 @@ def bypass_rules():
 
 
 def static_hosts():
-    text = (Path(__file__).resolve().parent / 'Leora-ProxyRules.conf').read_text()
+    text = (Path(__file__).resolve().parent / 'Leora-ProxyRules.conf').read_text(encoding='utf-8')
     section = text.split('[Host]', 1)[1].split('[', 1)[0]
     hosts = {}
     for line in section.splitlines():
