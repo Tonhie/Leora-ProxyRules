@@ -8,8 +8,8 @@ Mihomo/Xray 通过“代理连接，代理不可用时失败”降低真实公�
 
 - Shadowrocket：使用 `Leora-ProxyRules.conf`，启用 STUN 应答伪装、UDP 不支持时拒绝，并保留原有其他分流。
 - Mihomo/Xray：**广告拒绝 → UDP 代理（Mihomo 紧接拒绝兜底）→ Steam 商店代理 → 国内下载 CDN 的 TCP 80/443 直连 → 其余全部代理**。不保留普通国内/校园直连，以覆盖任意端口的 TCP STUN/TURN。
-- Steam 下载例外是已知受信任 CDN 的有限直连，不是全局豁免 Steam，也不匹配所有 `steamcontent.com`。命中例外的 HTTP(S) 连接是有意直连，例外目标不提供代理隐藏；这不是“任何流量都不会暴露真实 IP”的承诺。
-- 下载区域须在 Steam 客户端选择中国大陆；规则不能控制 Steam 实际选择哪个 CDN，未知下载域名仍走代理。依据 [SteamCN](https://github.com/blackmatrix7/ios_rule_script/blob/master/rule/Shadowrocket/SteamCN/SteamCN.list) 和 [Steam](https://github.com/blackmatrix7/ios_rule_script/blob/master/rule/Shadowrocket/Steam/Steam.list) 列表筛选下载端点，排除商店、社区和宽泛的 SteamCN 直连范围。
+- Steam 下载例外是已知受信任 CDN 的有限直连，不是全局豁免 Steam，对 Valve 专用下载域 `steamcontent.com` 也仅允许 TCP 80/443。命中例外的 HTTP(S) 连接是有意直连，例外目标不提供代理隐藏；这不是“任何流量都不会暴露真实 IP”的承诺。
+- 下载区域须在 Steam 客户端选择中国大陆；规则不能控制 Steam 实际选择哪个 CDN，未知下载域名仍走代理。依据 [SteamCN](https://github.com/blackmatrix7/ios_rule_script/blob/master/rule/Shadowrocket/SteamCN/SteamCN.list) 和 [Steam](https://github.com/blackmatrix7/ios_rule_script/blob/master/rule/Shadowrocket/Steam/Steam.list) 列表筛选下载端点，排除商店、社区和其他宽泛的 SteamCN 直连范围。
 
 广告规则只能拦截覆盖范围内的广告。代理须支持 UDP 才能保留 UDP 通话；不支持时拒绝，不回退直连。局域网 UDP、Tailscale 点对点、游戏、校园服务可能受到影响。客户端退出后的持续阻断需要系统或客户端 kill switch。
 

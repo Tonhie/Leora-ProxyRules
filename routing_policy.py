@@ -9,6 +9,7 @@ STEAM_DOWNLOADS = (
     'cdn-ali.content.steamchina.com', 'cdn-qc.content.steamchina.com',
     'cdn-ws.content.steamchina.com',
 )
+STEAM_DOWNLOAD_SUFFIXES = ('steamcontent.com',)
 STEAM_PROXY = ('steampowered.com', 'steamcommunity.com', 'steamstatic.com',
                'steamchina.com', 'steamstore-a.akamaihd.net')
 
@@ -20,7 +21,9 @@ def mihomo_rules(proxy_name='PROXY'):
     return ([f'NETWORK,udp,{proxy_name}', 'NETWORK,udp,REJECT'] +
             [f'DOMAIN-SUFFIX,{d},{proxy_name}' for d in STEAM_PROXY] +
             [f'AND,((NETWORK,tcp),(DST-PORT,80/443),(DOMAIN,{d})),DIRECT'
-             for d in STEAM_DOWNLOADS] + [f'MATCH,{proxy_name}'])
+             for d in STEAM_DOWNLOADS] +
+            [f'AND,((NETWORK,tcp),(DST-PORT,80/443),(DOMAIN-SUFFIX,{d})),DIRECT'
+             for d in STEAM_DOWNLOAD_SUFFIXES] + [f'MATCH,{proxy_name}'])
 
 
 def xray_rules():
@@ -29,7 +32,8 @@ def xray_rules():
         {'type': 'field', 'domain': ['domain:' + d for d in STEAM_PROXY],
          'outboundTag': 'proxy', 'ruleTag': 'steam-store'},
         {'type': 'field', 'network': 'tcp', 'port': '80,443',
-         'domain': ['full:' + d for d in STEAM_DOWNLOADS],
+         'domain': ['full:' + d for d in STEAM_DOWNLOADS] +
+                   ['domain:' + d for d in STEAM_DOWNLOAD_SUFFIXES],
          'outboundTag': 'direct', 'ruleTag': 'steam-download'},
         {'type': 'field', 'network': 'tcp,udp', 'outboundTag': 'proxy', 'ruleTag': 'final-proxy'},
     ]

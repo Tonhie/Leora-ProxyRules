@@ -146,7 +146,7 @@ def run_case(binary, core, mode, supported, work, proxy, direct_tcp, direct_udp,
     if core == 'mihomo':
         node = {'name': 'PROXY', 'type': 'socks5' if supported else 'http',
                 'server': '127.0.0.1', 'port': proxy_port, 'udp': supported}
-        base = {'socks-port': port, 'bind-address': '127.0.0.1', 'proxies': [node], 'hosts': {'dl.steam.clngaa.com': '127.0.0.1'}}
+        base = {'socks-port': port, 'bind-address': '127.0.0.1', 'proxies': [node], 'hosts': {'dl.steam.clngaa.com': '127.0.0.1', 'cache1-sha1.steamcontent.com': '127.0.0.1'}}
         routing = {'rules': ['MATCH,DIRECT', 'DOMAIN,stun.ads.localhost,REJECT']}
         config = merge_config(base, routing) if mode else dict(base, rules=routing['rules'])
         # Exercise real routing without changing the machine's tunnel/DNS settings.
@@ -165,7 +165,7 @@ def run_case(binary, core, mode, supported, work, proxy, direct_tcp, direct_udp,
              'settings': {'udp': True, 'auth': 'noauth'}}]}
         config = merge_subscription(base, overlay) if mode else dict(base,
             outbounds=base['outbounds'] + [{'tag': 'direct', 'protocol': 'freedom'}, {'tag': 'block', 'protocol': 'blackhole'}], routing=overlay['routing'])
-        config['dns'] = {'hosts': {'dl.steam.clngaa.com': '127.0.0.1'}}
+        config['dns'] = {'hosts': {'dl.steam.clngaa.com': '127.0.0.1', 'cache1-sha1.steamcontent.com': '127.0.0.1'}}
         if mode:
             next(o for o in config['outbounds'] if o['tag']=='direct')['settings'] = {'domainStrategy': 'UseIPv4'}
         path = work / 'config.json'
@@ -231,6 +231,8 @@ def run_case(binary, core, mode, supported, work, proxy, direct_tcp, direct_udp,
                 before_proxy_tcp = proxy.hits
                 send_tcp(port, 80, 'dl.steam.clngaa.com')
                 assert proxy.hits == before_proxy_tcp, 'Domestic download unexpectedly used the proxy'
+                send_tcp(port, 80, 'cache1-sha1.steamcontent.com')
+                assert proxy.hits == before_proxy_tcp, 'Valve download unexpectedly used the proxy'
                 trace = logpath.read_text()
                 expected = 'dial DIRECT' if core == 'mihomo' else 'taking detour [direct]'
                 assert expected in trace, 'No core evidence of Steam download direct route: ' + trace

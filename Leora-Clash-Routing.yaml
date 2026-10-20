@@ -77,4 +77,5 @@ rules:
 - AND,((NETWORK,tcp),(DST-PORT,80/443),(DOMAIN,cdn-ali.content.steamchina.com)),DIRECT
 - AND,((NETWORK,tcp),(DST-PORT,80/443),(DOMAIN,cdn-qc.content.steamchina.com)),DIRECT
 - AND,((NETWORK,tcp),(DST-PORT,80/443),(DOMAIN,cdn-ws.content.steamchina.com)),DIRECT
+- AND,((NETWORK,tcp),(DST-PORT,80/443),(DOMAIN-SUFFIX,steamcontent.com)),DIRECT
 - MATCH,PROXY

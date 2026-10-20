@@ -5,7 +5,7 @@ import unittest
 import yaml
 from merge_mihomo import merge_config
 from merge_xray import merge_subscription
-from routing_policy import STEAM_DOWNLOADS, STEAM_PROXY, mihomo_rules, xray_rules
+from routing_policy import STEAM_DOWNLOADS, STEAM_DOWNLOAD_SUFFIXES, STEAM_PROXY, mihomo_rules, xray_rules
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -54,7 +54,8 @@ class PolicyTests(unittest.TestCase):
         self.assertEqual(len(direct), 1)
         self.assertEqual(direct[0]['network'], 'tcp')
         self.assertEqual(direct[0]['port'], '80,443')
-        self.assertEqual(set(direct[0]['domain']), {'full:' + d for d in STEAM_DOWNLOADS})
+        self.assertEqual(set(direct[0]['domain']), {'full:' + d for d in STEAM_DOWNLOADS} | {'domain:' + d for d in STEAM_DOWNLOAD_SUFFIXES})
+        self.assertIn('AND,((NETWORK,tcp),(DST-PORT,80/443),(DOMAIN-SUFFIX,steamcontent.com)),DIRECT', rules)
         self.assertNotIn('store.steampowered.com', STEAM_DOWNLOADS)
         self.assertNotIn('steamcontent.com', STEAM_DOWNLOADS)
 
@@ -65,6 +66,7 @@ class PolicyTests(unittest.TestCase):
             self.assertLess(text.index('DOMAIN,' + domain + ',DIRECT'), china)
         for domain in STEAM_PROXY:
             self.assertLess(text.index('DOMAIN-SUFFIX,' + domain + ',PROXY'), china)
+        self.assertLess(text.index('DOMAIN-SUFFIX,steamcontent.com,DIRECT'), china)
         self.assertIn('Steam/Steam.list,PROXY', text)
         self.assertNotIn('Steam/Steam.list,DIRECT', text)
         self.assertNotIn('SteamCN/SteamCN.list,DIRECT', text)
