@@ -105,7 +105,7 @@ python3 tests/verify_profiles.py --mihomo /absolute/path/to/mihomo --xray /absol
 
 已用 Mihomo **1.19.32**、Xray **26.3.27** 验证主配置及合并结果。测试覆盖全部远程来源、动作与逐项规则顺序；广告 TCP/UDP 拒绝、代理 UDP 收发、不支持 UDP/代理不可用时不落入后续 DIRECT、普通 DIRECT 的 TCP/UDP，以及 Steam 下载 TCP/UDP 直连、商店代理。
 
-Action 使用固定版本且校验 SHA-256 的官方核心，运行上述全部检查后才发布生成文件。DNS 测试用本地解析器替身验证七组域名的根域/子域和专用 DNS 无记录时不回退，并验证公网 TCP/53 接管、默认路由为 DIRECT 时仍走指定代理、代理断开没有直连 DNS 回退；另验证尾网域名的 TCP/UDP 直连路径。没有实测校园 DNS 或实际尾网可达性。
+Action 使用固定版本且校验 SHA-256 的官方核心，运行上述全部检查后才发布生成文件。DNS 测试用本地解析器替身验证七组域名的根域/子域和专用 DNS 无记录时不回退，并验证公网 TCP/UDP 53 接管、默认路由为 DIRECT 时仍走指定代理、代理断开没有直连 DNS 回退；另验证尾网域名的 TCP/UDP 直连路径。没有实测校园 DNS 或实际尾网可达性。
 
 测试使用本地 SOCKS 代理、回环接收端和固定 DNS 映射，不连接实际 Steam 服务。Steam 下载直连通过核心路由日志确认；这不是下载测速或 CDN 地域检测。公网 DNS 路由测试将 HTTPS 临时替换为本地 DNS-over-TCP 替身，测试路由与故障路径；生成配置的 HTTPS 要求另由静态回归检查，测试不修改系统证书信任。关闭防护的配置仅在临时测试目录作为直连对照组生成，不发布。测试不启用系统 TUN，不修改本机网络；Shadowrocket 的 STUN 设置及 Steam 优先级做配置静态检查，未运行 iOS 客户端。
 

@@ -63,6 +63,18 @@ def lookup(port, name):
         return readn(sock, struct.unpack('!H', readn(sock, 2))[0])
 
 
+def lookup_udp(port, name):
+    control, relay = connect_socks(port, 3, 0)
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.settimeout(8)
+            # SOCKS UDP header + the DNS destination; the core must intercept it.
+            header=b'\x00\x00\x00\x01\x08\x08\x08\x08\x00\x35'
+            sock.sendto(header+question(name), ('127.0.0.1',relay))
+            return sock.recvfrom(4096)[0][10:]
+    finally:control.close()
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--mihomo', required=True)
@@ -92,7 +104,7 @@ def main():
                     else:
                         config = merge_subscription({'outbounds':[{'tag':'proxy','protocol':'socks',
                             'settings':{'servers':[{'address':'127.0.0.1','port':upstream}]}}],
-                            'inbounds':[{'listen':'127.0.0.1','port':port,'protocol':'socks'}]},
+                            'inbounds':[{'listen':'127.0.0.1','port':port,'protocol':'socks','settings':{'udp':True}}]},
                             {'routing':{'domainStrategy':'AsIs','rules':[{'type':'field','network':'tcp,udp','outboundTag':'direct'}]}})
                         config['dns']['servers'] = [endpoint]
                         public = next(r for r in config['routing']['rules'] if r.get('ruleTag')=='public-dns-proxy')
@@ -117,12 +129,14 @@ def main():
                                 answer = b''
                             if working:
                                 assert answer[-4:]==socket.inet_aton('192.0.2.123'), (core,answer.hex(),logpath.read_text())
+                                udp_answer=lookup_udp(port,'public-udp.leora.test')
+                                assert udp_answer[-4:]==socket.inet_aton('192.0.2.123'), 'UDP/53 interception failed'
                                 assert proxy.hits>before[1], 'Public DNS bypassed proxy'
                                 assert dns.hits-before[0] == proxy.hits-before[1], 'Unexpected direct DNS query'
                             else:
                                 assert not answer or struct.unpack('!H',answer[6:8])[0]==0, 'Failed proxy returned an answer'
                                 assert dns.hits==before[0], 'Failed proxy fell back to DIRECT DNS'
-                            print(f'PASS {core}: captured TCP/53 public DNS proxy={"working" if working else "down, no direct fallback"}',flush=True)
+                            print(f'PASS {core}: captured DNS (TCP/UDP when working) proxy={"working" if working else "down, no direct fallback"}',flush=True)
                         except Exception:
                             print(logpath.read_text());raise
                         finally:
