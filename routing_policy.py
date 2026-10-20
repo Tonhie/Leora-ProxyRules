@@ -1,6 +1,7 @@
 """Mandatory transport policy; these do not spoof STUN or install a packet tunnel."""
 
 import ipaddress
+from urllib.parse import urlsplit
 from pathlib import Path
 
 TAILNET_RANGES = ('100.64.0.0/10', 'fd7a:115c:a1e0::/48')
@@ -29,20 +30,53 @@ def split_dns():
     return result
 
 
-def mihomo_local_rules():
-    return ([f'DOMAIN-SUFFIX,{domain},DIRECT' for domain in split_dns()] +
-            [f'IP-CIDR{6 if ":" in cidr else ""},{cidr},DIRECT,no-resolve' for cidr in TAILNET_RANGES])
+# These transport guards cannot identify STUN on arbitrary ports. Browser WebRTC
+# restrictions remain necessary when preserving public DIRECT routing.
+STUN_PORTS = ('3478', '5349', '19302-19309')
+STUN_DOMAIN = r'(^|[.-])(stun[0-9]*|turn[0-9]*|turns)([.-]|$)'
+BOOTSTRAP_TAG = 'leora-bootstrap'
+BOOTSTRAP_DOH = 'https://223.5.5.5/dns-query'
 
 
-def xray_local_rules():
-    resolvers = list(dict.fromkeys(list(split_dns().values()) + ['223.5.5.5']))
+def general():
+    text = (Path(__file__).resolve().parent / 'Leora-ProxyRules.conf').read_text()
+    section = text.split('[General]', 1)[1].split('[', 1)[0]
+    return dict(tuple(v.strip() for v in line.split('=', 1))
+                for line in section.splitlines() if '=' in line and not line.lstrip().startswith('#'))
+
+
+def public_dns():
+    policy = general()
+    result = []
+    for key in ('dns-server', 'fallback-dns-server'):
+        value = policy[key]
+        parsed = urlsplit(value)
+        if parsed.scheme != 'https' or parsed.fragment != 'proxy':
+            raise ValueError('Public DNS must use HTTPS through proxy: ' + key)
+        ipaddress.ip_address(parsed.hostname)  # Avoid system DNS bootstrap.
+        result.append(value.rsplit('#', 1)[0])
+    if policy['dns-direct-system'] != 'false':
+        raise ValueError('System DNS fallback is incompatible with leak protection')
+    return result
+
+
+def mihomo_dns_outbound():
+    return {'name': DNS_OUT, 'type': 'dns'}
+
+
+def xray_dns_routes():
     return [
         {'type': 'field', 'inboundTag': [DNS_TAG], 'network': 'tcp,udp', 'port': '53',
-         'ip': resolvers, 'outboundTag': 'direct', 'ruleTag': 'split-dns-direct'},
-        {'type': 'field', 'domain': ['domain:' + d for d in split_dns()],
-         'outboundTag': 'direct', 'ruleTag': 'split-domain-direct'},
-        {'type': 'field', 'ip': list(TAILNET_RANGES),
-         'outboundTag': 'direct', 'ruleTag': 'tailnet-ip'},
+         'ip': list(dict.fromkeys(split_dns().values())),
+         'outboundTag': 'direct', 'ruleTag': 'split-dns-direct'},
+        {'type': 'field', 'inboundTag': [BOOTSTRAP_TAG], 'network': 'tcp', 'port': '443',
+         'ip': [urlsplit(BOOTSTRAP_DOH).hostname],
+         'outboundTag': 'direct', 'ruleTag': 'bootstrap-dns-direct'},
+        {'type': 'field', 'inboundTag': [DNS_TAG], 'network': 'tcp', 'port': '443',
+         'ip': list(dict.fromkeys(urlsplit(u).hostname for u in public_dns())),
+         'outboundTag': 'proxy', 'ruleTag': 'public-dns-proxy'},
+        {'type': 'field', 'inboundTag': [DNS_TAG, BOOTSTRAP_TAG],
+         'outboundTag': 'block', 'ruleTag': 'internal-dns-deny'},
         {'type': 'field', 'network': 'tcp,udp', 'port': '53',
          'outboundTag': DNS_OUT, 'ruleTag': 'dns-intercept'},
     ]
@@ -50,11 +84,51 @@ def xray_local_rules():
 
 def xray_dns():
     return {'tag': DNS_TAG, 'hosts': {'localhost': '127.0.0.1'},
+            'queryStrategy': 'UseIPv4' if general()['ipv6']=='false' else 'UseIP',
             'disableFallbackIfMatch': True,
             'servers': [
                 {'address': ip, 'domains': ['domain:' + d], 'skipFallback': True, 'finalQuery': True}
                 for d, ip in split_dns().items()
-            ] + ['https://1.1.1.1/dns-query', 'https://1.0.0.1/dns-query']}
+            ] + public_dns()}
+
+
+def mihomo_transport_guards():
+    return ['DST-PORT,' + '/'.join(STUN_PORTS) + ',REJECT',
+            'DOMAIN-REGEX,' + STUN_DOMAIN + ',REJECT',
+            'DST-PORT,853,REJECT']
+
+
+def xray_transport_guards():
+    return [
+        {'type': 'field', 'network': 'tcp,udp', 'port': ','.join(STUN_PORTS),
+         'outboundTag': 'block', 'ruleTag': 'stun-ports'},
+        {'type': 'field', 'domain': ['regexp:' + STUN_DOMAIN],
+         'outboundTag': 'block', 'ruleTag': 'stun-domain'},
+        {'type': 'field', 'network': 'tcp,udp', 'port': '853',
+         'outboundTag': 'block', 'ruleTag': 'external-dot-deny'},
+    ]
+
+
+def local_conditions():
+    domains = {'localhost', 'local'} | set(split_dns())
+    nets = set(general()['tun-excluded-routes'].split(',')) | set(TAILNET_RANGES)
+    return domains, nets
+
+
+def is_local_mihomo(rule):
+    parts = rule.split(',')
+    domains, nets = local_conditions()
+    return (len(parts)>=3 and parts[2]=='DIRECT' and
+            ((parts[0] in ('DOMAIN','DOMAIN-SUFFIX') and parts[1] in domains) or
+             (parts[0] in ('IP-CIDR','IP-CIDR6') and parts[1] in nets)))
+
+
+def is_local_xray(rule):
+    domains, nets = local_conditions()
+    return (rule.get('outboundTag')=='direct' and
+            ((bool(rule.get('domain')) and set(rule['domain']) <=
+              {'domain:'+d for d in domains} | {'full:localhost'}) or
+             (bool(rule.get('ip')) and set(rule['ip']) <= nets)))
 
 
 def xray_dns_for_config(config):
@@ -76,7 +150,7 @@ def xray_dns_for_config(config):
             if not any(host == d or host.endswith('.' + d) for d in private):
                 domains.add('full:' + host)
     if domains:
-        dns['servers'].insert(0, {'address': '223.5.5.5', 'domains': sorted(domains),
+        dns['servers'].insert(0, {'address': BOOTSTRAP_DOH, 'tag': BOOTSTRAP_TAG, 'domains': sorted(domains),
                                   'skipFallback': True, 'finalQuery': True})
     return dns
 
@@ -107,15 +181,16 @@ def mihomo_settings():
                 'inet6-address': ['fdfe:dcba:9876::1/126'],
                 'dns-hijack': ['any:53', 'tcp://any:53'],
                 'route-exclude-address': list(TAILNET_RANGES)},
-        'dns': {'enable': True, 'ipv6': True, 'respect-rules': True,
+        'dns': {'enable': True, 'ipv6': general()['ipv6']!='false', 'respect-rules': True,
+                'use-system-hosts': False, 'direct-nameserver-follow-policy': True,
                 'enhanced-mode': 'fake-ip', 'fake-ip-range': '198.18.0.1/16',
                 'fake-ip-filter': ['+.' + d for d in split_dns()],
                 'nameserver-policy': {'+.' + d: 'udp://' + ip + '#DIRECT' for d, ip in split_dns().items()},
-                'default-nameserver': ['223.5.5.5'],
-                'proxy-server-nameserver': ['https://dns.alidns.com/dns-query'],
-                'direct-nameserver': ['https://dns.alidns.com/dns-query'],
-                'nameserver': ['https://1.1.1.1/dns-query#PROXY',
-                               'https://1.0.0.1/dns-query#PROXY']}}
+                'default-nameserver': [BOOTSTRAP_DOH],
+                'proxy-server-nameserver': [BOOTSTRAP_DOH + '#DIRECT'],
+                'proxy-server-nameserver-policy': {'+.' + d: 'udp://' + ip + '#DIRECT' for d, ip in split_dns().items()},
+                'direct-nameserver': [general()['direct-dns-server'] + '#DIRECT'],
+                'nameserver': [u+'#PROXY' for u in public_dns()]}}
 
 
 def protected_mihomo(rules, proxy_name='PROXY'):
@@ -127,6 +202,15 @@ def protected_mihomo(rules, proxy_name='PROXY'):
     """
     if not proxy_name or any(c in proxy_name for c in ',\r\n#&'):
         raise ValueError('Invalid proxy name')
+    # Put privacy overrides after only the canonical local bypass. Keep all
+    # other source rules as an ordered subsequence, without promoting DIRECT.
+    guards = mihomo_transport_guards()
+    dns_rule = 'DST-PORT,53,' + DNS_OUT
+    rules = [r for r in rules if r not in guards and r != dns_rule]
+    offset = 0
+    while offset < len(rules) and is_local_mihomo(rules[offset]):
+        offset += 1
+    rules = [dns_rule] + rules[:offset] + guards + rules[offset:]
     result = []
     for index, rule in enumerate(rules):
         parts = rule.split(',')
@@ -147,12 +231,14 @@ def protected_mihomo(rules, proxy_name='PROXY'):
 
 
 def protected_xray(rules):
-    # DNS plumbing precedes user traffic rules. Never discard DIRECT or PROXY
-    # entries, and never promote a later rule ahead of its source position.
-    internal = [r for r in xray_local_rules()
-                if r['ruleTag'] in ('split-dns-direct', 'dns-intercept')]
-    tags = {r['ruleTag'] for r in internal}
-    return internal + [r for r in rules if r.get('ruleTag') not in tags]
+    internal = xray_dns_routes()
+    guards = xray_transport_guards()
+    tags = {r['ruleTag'] for r in internal + guards}
+    rules = [r for r in rules if r.get('ruleTag') not in tags]
+    offset = 0
+    while offset < len(rules) and is_local_xray(rules[offset]):
+        offset += 1
+    return internal + rules[:offset] + guards + rules[offset:]
 
 
 def validate_xray_proxy(config, proxy_tag, proxy_balancer):

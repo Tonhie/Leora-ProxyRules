@@ -143,8 +143,9 @@ def run_case(binary, core, mode, supported, work, proxy, direct_tcp, direct_udp,
     # Match fixtures keep source precedence and deliberately put a DIRECT rule
     # after a proxy rule, exposing unsupported-UDP fallthrough regressions.
     overlay = {'routing': {'rules': [
+        {'type': 'field', 'domain': ['domain:ts.net'], 'outboundTag': 'direct'},
         {'type': 'field', 'domain': ['full:stun.ads.localhost'], 'outboundTag': 'block'},
-        {'type': 'field', 'domain': ['domain:ts.net', 'full:dl.steam.clngaa.com', 'domain:steamcontent.com'], 'outboundTag': 'direct'},
+        {'type': 'field', 'domain': ['full:dl.steam.clngaa.com', 'domain:steamcontent.com'], 'outboundTag': 'direct'},
         {'type': 'field', 'domain': ['domain:steampowered.com', 'full:proxy.example'], 'outboundTag': 'proxy'},
         {'type': 'field', 'domain': ['domain:example'], 'outboundTag': 'direct'},
         {'type': 'field', 'network': 'tcp,udp', 'outboundTag': 'proxy'}]}}
@@ -154,7 +155,7 @@ def run_case(binary, core, mode, supported, work, proxy, direct_tcp, direct_udp,
         node = {'name': 'PROXY', 'type': 'socks5' if supported else 'http',
                 'server': '127.0.0.1', 'port': proxy_port, 'udp': supported}
         base = {'socks-port': port, 'bind-address': '127.0.0.1', 'proxies': [node], 'hosts': {'dl.steam.clngaa.com': '127.0.0.1', 'cache1-sha1.steamcontent.com': '127.0.0.1', 'peer.tail.ts.net': '127.0.0.1', 'proxy.example': '127.0.0.1', 'direct.example': '127.0.0.1'}}
-        routing = {'rules': ['DOMAIN,stun.ads.localhost,REJECT', 'DOMAIN-SUFFIX,ts.net,DIRECT', 'DOMAIN,dl.steam.clngaa.com,DIRECT', 'DOMAIN-SUFFIX,steamcontent.com,DIRECT', 'DOMAIN-SUFFIX,steampowered.com,PROXY', 'DOMAIN,proxy.example,PROXY', 'DOMAIN-SUFFIX,example,DIRECT', 'MATCH,PROXY']} if mode else {'rules': ['MATCH,DIRECT']}
+        routing = {'rules': ['DOMAIN-SUFFIX,ts.net,DIRECT', 'DOMAIN,stun.ads.localhost,REJECT', 'DOMAIN,dl.steam.clngaa.com,DIRECT', 'DOMAIN-SUFFIX,steamcontent.com,DIRECT', 'DOMAIN-SUFFIX,steampowered.com,PROXY', 'DOMAIN,proxy.example,PROXY', 'DOMAIN-SUFFIX,example,DIRECT', 'MATCH,PROXY']} if mode else {'rules': ['MATCH,DIRECT']}
         config = merge_config(base, routing) if mode else dict(base, rules=routing['rules'])
         # Exercise real routing without changing the machine's tunnel/DNS settings.
         config['tun'] = {'enable': False}
@@ -201,6 +202,9 @@ def run_case(binary, core, mode, supported, work, proxy, direct_tcp, direct_udp,
                         break
                 else:
                     raise AssertionError('Negative-control UDP data path did not become ready')
+            if not mode:
+                assert send_tcp(port, 3478), 'STUN TCP negative-control receiver failed'
+                assert send_udp(port, 3478), 'STUN UDP negative-control receiver failed'
             if mode:
                 before_proxy = (proxy.hits, proxy_hits[0])
                 before_direct = (direct_tcp.hits, direct_hits[0])
@@ -250,6 +254,18 @@ def run_case(binary, core, mode, supported, work, proxy, direct_tcp, direct_udp,
                 received = send_udp(port, target_udp, 'proxy.example')
                 assert received == supported
                 assert before_direct == direct_hits[0], 'Proxy UDP fell into later DIRECT'
+            if mode:
+                before_proxy = (proxy.hits, proxy_hits[0])
+                before_direct = (direct_tcp.hits, direct_hits[0], direct_tcp.stun.hits)
+                for blocked_port in (3478, 5349, 19302, 19309, 853):
+                    assert not send_tcp(port, blocked_port, 'direct.example'), 'STUN/DoT TCP escaped'
+                    assert not send_udp(port, blocked_port, 'direct.example'), 'STUN/DoT UDP escaped'
+                assert not send_tcp(port, target_tcp, 'stun.direct.example'), 'STUN domain TCP escaped'
+                assert not send_udp(port, target_udp, 'stun.direct.example'), 'STUN domain UDP escaped'
+                assert before_proxy == (proxy.hits, proxy_hits[0]), 'Blocked discovery reached proxy'
+                assert before_direct == (direct_tcp.hits, direct_hits[0], direct_tcp.stun.hits), 'Blocked discovery reached DIRECT'
+                assert send_tcp(port, 3478, 'peer.tail.ts.net'), 'Local tailnet STUN exception was lost'
+                assert send_udp(port, 3478, 'peer.tail.ts.net'), 'Local tailnet UDP exception was lost'
             if mode and supported:
                 before_proxy_tcp = proxy.hits
                 send_tcp(port, 80, 'dl.steam.clngaa.com')
@@ -281,10 +297,13 @@ def main():
     direct_udp.bind(('127.0.0.1', 0))
     proxy_udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     proxy_udp.bind(('127.0.0.1', 0))
+    stun_udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    stun_udp.bind(('127.0.0.1', 3478))
     direct_hits, proxy_hits = [0], [0]
-    for sock, hits in [(direct_udp, direct_hits), (proxy_udp, proxy_hits)]:
+    for sock, hits in [(direct_udp, direct_hits), (proxy_udp, proxy_hits), (stun_udp, direct_hits)]:
         threading.Thread(target=udp_echo, args=(sock, hits), daemon=True).start()
     direct_tcp = serve(Server(('127.0.0.1', 0), Echo))
+    direct_tcp.stun = serve(Server(('127.0.0.1', 3478), Echo))
     proxy = serve(Server(('127.0.0.1', 0), Socks))
     proxy.udp = proxy_udp
     try:
@@ -296,6 +315,9 @@ def main():
                     run_case(str(pathlib.Path(binary).resolve()), core, mode, supported,
                              work, proxy, direct_tcp, direct_udp, direct_hits, proxy_hits)
     finally:
+        direct_tcp.stun.shutdown()
+        direct_tcp.stun.server_close()
+        stun_udp.close()
         direct_tcp.shutdown()
         proxy.shutdown()
         direct_tcp.server_close()

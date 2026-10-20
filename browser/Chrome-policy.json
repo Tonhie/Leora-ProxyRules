@@ -1,3 +1,4 @@
 {
-  "WebRtcIPHandling": "disable_non_proxied_udp"
+  "WebRtcIPHandling": "disable_non_proxied_udp",
+  "DnsOverHttpsMode": "off"
 }

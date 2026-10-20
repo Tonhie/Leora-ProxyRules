@@ -4,7 +4,7 @@ Python 3.10+, pip install PyYAML. No subscription credentials are needed.
 """
 import argparse, concurrent.futures, datetime, hashlib, ipaddress, json, pathlib, re, urllib.request
 import yaml
-from routing_policy import mihomo_settings, protected_mihomo, protected_xray, xray_dns, dns_outbound
+from routing_policy import mihomo_settings, protected_mihomo, protected_xray, xray_dns, dns_outbound, mihomo_dns_outbound, STUN_PORTS, public_dns, BOOTSTRAP_DOH
 SOURCE='https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/Leora-ProxyRules.conf'
 DEFAULT_BASE='https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main'
 P=pathlib.Path(__file__).resolve().parent
@@ -175,12 +175,12 @@ def run():
             if k in r:r[k]=list(dict.fromkeys(r[k]))
     clash=protected_mihomo(clash)
     xr=protected_xray(xr)
-    dump('Leora-Clash-Routing.yaml',dict(mihomo_settings(),**{'rule-providers':providers,'rules':clash}))
+    dump('Leora-Clash-Routing.yaml',dict(mihomo_settings(),**{'proxies':[mihomo_dns_outbound()],'rule-providers':providers,'rules':clash}))
     dump('Leora-Xray-Routing.json',{'dns':xray_dns(),'outbounds':[dns_outbound()],'routing':{'domainStrategy':'IPOnDemand','rules':xr}})
     used={v['url'].split('/providers/')[-1] for v in providers.values() if '/providers/' in v['url']}
     for stale in (P/'providers').glob('leora-*.yaml'):
         if stale.name not in used:stale.unlink()
-    dump('conversion-report.json',{'generated_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'source':SOURCE,'base':ARGS.base,'source_sha256':hashlib.sha256(conf.encode()).hexdigest(),'policy':'Full portable Shadowrocket rules in source order; proxy UDP rejects on unsupported transport; split DNS synchronized','providers':conversions,'asn_sources':as_urls,'asn_prefix_counts':{n:len(v) for n,v in as_prefix.items()},'xray_rules':len(xr),'upstream_provider_count':sum(not r['url'].startswith(ARGS.base.rstrip('/')+'/providers/') for r in providers.values())})
+    dump('conversion-report.json',{'generated_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'source':SOURCE,'base':ARGS.base,'source_sha256':hashlib.sha256(conf.encode()).hexdigest(),'policy':'Full portable Shadowrocket rules in source order with local bypass, DNS interception and targeted STUN guards', 'privacy':{'public_dns':public_dns(),'bootstrap_dns':BOOTSTRAP_DOH,'stun_ports':list(STUN_PORTS),'native_stun_spoof':False,'browser_webrtc_restriction_required':True},'providers':conversions,'asn_sources':as_urls,'asn_prefix_counts':{n:len(v) for n,v in as_prefix.items()},'xray_rules':len(xr),'upstream_provider_count':sum(not r['url'].startswith(ARGS.base.rstrip('/')+'/providers/') for r in providers.values())})
     print(json.dumps({'providers':len(providers),'upstream_links':sum(not r['url'].startswith(ARGS.base.rstrip('/')+'/providers/') for r in providers.values()),'converted_providers':sum(r['url'].startswith(ARGS.base.rstrip('/')+'/providers/') for r in providers.values()),'xray_rules':len(xr),'unsupported_count':sum(len(r['unsupported']) for r in conversions)}))
 
 if __name__=='__main__':

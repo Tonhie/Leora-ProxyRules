@@ -21,8 +21,8 @@ class Stub(socketserver.BaseRequestHandler):
     def handle(self):
         data, sock = self.request
         self.server.hits += 1
-        noanswer = b'noanswer' in data
-        flags = b'\x81\x83' if noanswer else b'\x81\x80'
+        noanswer = b'noanswer' in data or b'servfail' in data
+        flags = b'\x81\x82' if b'servfail' in data else (b'\x81\x83' if noanswer else b'\x81\x80')
         header = data[:2] + flags + struct.pack('!HHHH', 1, 0 if noanswer else 1, 0, 0)
         answer = b'' if noanswer else b'\xc0\x0c' + struct.pack('!HHIH', 1, 1, 60, 4) + self.server.answer
         sock.sendto(header + data[12:] + answer, self.client_address)
@@ -90,11 +90,12 @@ def main():
                                 answer=exchange(core,port,name)
                                 assert answer[-4:]==stub.answer,(core,name,answer.hex())
                         counts=[s.hits for s in servers]
-                        answer=exchange(core,port,'noanswer.tail.ts.net')
-                        assert struct.unpack('!H',answer[6:8])[0]==0,'Unexpected fallback answer'
+                        for name in ('noanswer.tail.ts.net','servfail.tail.ts.net'):
+                            answer=exchange(core,port,name)
+                            assert struct.unpack('!H',answer[6:8])[0]==0,'Unexpected fallback answer'
                         assert servers[-1].hits==before,'Private query fell back to public/default DNS'
                         assert all(s.hits==n for s,n in zip(servers[1:],counts[1:])), 'Private query tried a different resolver'
-                        print(f'PASS {core}: 7 resolver policies, apex/subdomains, private NXDOMAIN has no fallback',flush=True)
+                        print(f'PASS {core}: 7 resolver policies, apex/subdomains, private NXDOMAIN/SERVFAIL has no fallback',flush=True)
                     except Exception:
                         print(logpath.read_text());raise
                     finally:proc.terminate();proc.wait(timeout=10)

@@ -25,7 +25,7 @@ class PolicyTests(unittest.TestCase):
     def test_mihomo_preserves_order_and_only_guards_proxy_matches(self):
         original = copy.deepcopy(self.m)
         result = merge_config(self.m, self.mrules)
-        self.assertEqual(result['rules'], [
+        self.assertEqual(result['rules'][4:], [
             'DOMAIN,ads.example,REJECT', 'DOMAIN,proxy.example,PROXY',
             'AND,((NETWORK,udp),(DOMAIN,proxy.example)),REJECT',
             'DOMAIN-SUFFIX,example,DIRECT', 'MATCH,PROXY', 'NETWORK,udp,REJECT'])
@@ -38,7 +38,7 @@ class PolicyTests(unittest.TestCase):
         result = merge_subscription([self.x], self.xr)[0]
         rules = result['routing']['rules']
         self.assertEqual(rules[0]['inboundTag'], ['api'])
-        self.assertEqual(rules[3:], self.xr['routing']['rules'])
+        self.assertEqual(rules[-len(self.xr['routing']['rules']):], self.xr['routing']['rules'])
         self.assertEqual(self.x, original)
         self.assertEqual(result['dns'], xray_dns())
 
@@ -154,13 +154,61 @@ class PolicyTests(unittest.TestCase):
             {'address': 'node.example.com'}, {'address': 'NODE.TAIL.TS.NET.'}]}
         result = merge_subscription(self.x, self.xr)
         bootstrap = result['dns']['servers'][0]
-        self.assertEqual(bootstrap['address'], '223.5.5.5')
+        self.assertEqual(bootstrap['address'], 'https://223.5.5.5/dns-query')
         self.assertEqual(bootstrap['domains'], ['full:node.example.com'])
         self.assertTrue(bootstrap['skipFallback'])
 
     def test_reserved_dns_inbound_tag_cannot_be_user_traffic(self):
         self.x['inbounds'] = [{'tag': 'leora-dns', 'protocol': 'socks'}]
         with self.assertRaises(ValueError):merge_subscription(self.x, self.xr)
+
+    def test_dns_is_encrypted_and_has_no_system_fallback(self):
+        from routing_policy import public_dns, BOOTSTRAP_TAG
+        m = merge_config(self.m, self.mrules)
+        self.assertEqual(m['dns']['nameserver'], [u+'#PROXY' for u in public_dns()])
+        self.assertEqual(m['dns']['default-nameserver'], ['https://223.5.5.5/dns-query'])
+        self.assertTrue(m['dns']['direct-nameserver-follow-policy'])
+        self.assertFalse(m['dns']['use-system-hosts'])
+        self.assertFalse(m['dns']['ipv6'])
+        self.assertEqual(m['dns']['proxy-server-nameserver-policy'], m['dns']['nameserver-policy'])
+        self.assertEqual(m['rules'][0], 'DST-PORT,53,leora-dns-out')
+        self.assertIn({'name':'leora-dns-out','type':'dns'}, m['proxies'])
+        x = merge_subscription(self.x, self.xr)
+        rules = {r.get('ruleTag'):r for r in x['routing']['rules']}
+        self.assertEqual(rules['public-dns-proxy']['outboundTag'],'proxy')
+        self.assertEqual(rules['public-dns-proxy']['inboundTag'],['leora-dns'])
+        self.assertEqual(set(rules['public-dns-proxy']['ip']), {'1.1.1.1','1.0.0.1'})
+        self.assertEqual(rules['internal-dns-deny']['outboundTag'],'block')
+        self.assertNotIn('223.5.5.5',rules['split-dns-direct']['ip'])
+        self.assertEqual(x['dns']['queryStrategy'],'UseIPv4')
+        self.x['inbounds'] = [{'tag': BOOTSTRAP_TAG}]
+        with self.assertRaises(ValueError):merge_subscription(self.x,self.xr)
+
+    def test_stun_and_dot_guards_precede_public_direct_and_preserve_local(self):
+        from routing_policy import split_dns, STUN_PORTS, STUN_DOMAIN
+        m=yaml.safe_load((ROOT/'Leora-Clash-Routing.yaml').read_text())
+        x=json.loads((ROOT/'Leora-Xray-Routing.json').read_text())['routing']['rules']
+        mi=m['rules'].index('DST-PORT,3478/5349/19302-19309,REJECT')
+        xi=next(i for i,r in enumerate(x) if r.get('ruleTag')=='stun-ports')
+        for d in split_dns():
+            self.assertLess(m['rules'].index('DOMAIN-SUFFIX,'+d+',DIRECT'),mi)
+            self.assertTrue(any('domain:'+d in r.get('domain',[]) for r in x[:xi]))
+        self.assertLess(mi,m['rules'].index('DOMAIN-SUFFIX,tonhie.online,DIRECT'))
+        self.assertLess(xi,next(i for i,r in enumerate(x) if 'domain:tonhie.online' in r.get('domain',[])))
+        rule=x[xi]
+        self.assertEqual(rule['port'],','.join(STUN_PORTS))
+        self.assertEqual(rule['outboundTag'],'block')
+        self.assertTrue(any(r.get('domain')==['regexp:'+STUN_DOMAIN] and r['outboundTag']=='block' for r in x))
+        self.assertIn('DST-PORT,853,REJECT',m['rules'])
+        self.assertTrue(any(r.get('port')=='853' and r.get('outboundTag')=='block' for r in x))
+
+    def test_browser_templates_use_core_dns_and_restrict_webrtc(self):
+        chrome=json.loads((ROOT/'browser/Chrome-policy.json').read_text())
+        self.assertEqual(chrome['WebRtcIPHandling'],'disable_non_proxied_udp')
+        self.assertEqual(chrome['DnsOverHttpsMode'],'off')
+        firefox=(ROOT/'browser/Firefox-user.js').read_text()
+        self.assertIn('user_pref("media.peerconnection.enabled", false);',firefox)
+        self.assertIn('user_pref("network.trr.mode", 5);',firefox)
 
     def test_custom_script_cannot_override_protection(self):
         self.xr['routing']['script'] = 'custom.lua'

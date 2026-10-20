@@ -4,7 +4,7 @@ import argparse
 import copy
 import pathlib
 import yaml
-from routing_policy import mihomo_settings, protected_mihomo, validate_mihomo_proxy
+from routing_policy import mihomo_settings, protected_mihomo, validate_mihomo_proxy, mihomo_dns_outbound, DNS_OUT
 
 ROOT = pathlib.Path(__file__).resolve().parent
 
@@ -14,6 +14,9 @@ def merge_config(payload, routing, proxy_name='PROXY'):
         raise ValueError('Expected Mihomo YAML objects')
     validate_mihomo_proxy(payload, proxy_name)
     result = copy.deepcopy(payload)
+    if any(p.get('name')==DNS_OUT and p.get('type')!='dns' for p in result.get('proxies', [])):
+        raise ValueError('Conflicting DNS proxy name: ' + DNS_OUT)
+    result['proxies'] = [p for p in result.get('proxies', []) if p.get('name')!=DNS_OUT] + [mihomo_dns_outbound()]
     # Replace TUN settings: inherited include/exclude filters could silently
     # bypass capture. Client-managed VPN/TUN still needs its own verification.
     preset = mihomo_settings()

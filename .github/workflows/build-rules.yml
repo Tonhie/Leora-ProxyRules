@@ -9,6 +9,7 @@ on:
       - merge_xray.py
       - routing_policy.py
       - tests/**
+      - browser/**
       - .github/workflows/build-rules.yml
 permissions:
   contents: write
@@ -18,6 +19,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -31,6 +33,16 @@ jobs:
         run: python build_rules.py --base "https://raw.githubusercontent.com/$REPOSITORY/refs/heads/$REF_NAME"
       - name: Validate generated profiles and merge tools
         run: python -m unittest discover -s tests -v
+      - name: Download checksum-verified cores
+        run: python tests/fetch_cores.py "$RUNNER_TEMP/leora-cores"
+      - name: Validate complete generated profiles with both cores
+        run: python tests/verify_profiles.py --mihomo "$RUNNER_TEMP/leora-cores/mihomo" --xray "$RUNNER_TEMP/leora-cores/xray"
+      - name: Verify routing and STUN transport guards
+        run: python tests/verify_cores.py --mihomo "$RUNNER_TEMP/leora-cores/mihomo" --xray "$RUNNER_TEMP/leora-cores/xray"
+      - name: Verify split DNS has no public fallback
+        run: python tests/verify_dns.py --mihomo "$RUNNER_TEMP/leora-cores/mihomo" --xray "$RUNNER_TEMP/leora-cores/xray"
+      - name: Verify public DNS proxy and failure paths
+        run: python tests/verify_privacy.py --mihomo "$RUNNER_TEMP/leora-cores/mihomo" --xray "$RUNNER_TEMP/leora-cores/xray"
       - name: Commit refreshed files
         run: |
           git config user.name github-actions[bot]
