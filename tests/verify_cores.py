@@ -146,9 +146,9 @@ def run_case(binary, core, mode, supported, work, proxy, direct_tcp, direct_udp,
     if core == 'mihomo':
         node = {'name': 'PROXY', 'type': 'socks5' if supported else 'http',
                 'server': '127.0.0.1', 'port': proxy_port, 'udp': supported}
-        base = {'socks-port': port, 'bind-address': '127.0.0.1', 'proxies': [node]}
+        base = {'socks-port': port, 'bind-address': '127.0.0.1', 'proxies': [node], 'hosts': {'dl.steam.clngaa.com': '127.0.0.1'}}
         routing = {'rules': ['MATCH,DIRECT', 'DOMAIN,stun.ads.localhost,REJECT']}
-        config = merge_config(base, routing, mode=mode) if mode else dict(base, rules=routing['rules'])
+        config = merge_config(base, routing) if mode else dict(base, rules=routing['rules'])
         # Exercise real routing without changing the machine's tunnel/DNS settings.
         config['tun'] = {'enable': False}
         config['dns'] = {'enable': False}
@@ -163,7 +163,11 @@ def run_case(binary, core, mode, supported, work, proxy, direct_tcp, direct_udp,
         base = {'log': {'loglevel': 'debug'}, 'outbounds': [node], 'inbounds': [
             {'listen': '127.0.0.1', 'port': port, 'protocol': 'socks',
              'settings': {'udp': True, 'auth': 'noauth'}}]}
-        config = merge_subscription(base, overlay, webrtc=mode)
+        config = merge_subscription(base, overlay) if mode else dict(base,
+            outbounds=base['outbounds'] + [{'tag': 'direct', 'protocol': 'freedom'}, {'tag': 'block', 'protocol': 'blackhole'}], routing=overlay['routing'])
+        config['dns'] = {'hosts': {'dl.steam.clngaa.com': '127.0.0.1'}}
+        if mode:
+            next(o for o in config['outbounds'] if o['tag']=='direct')['settings'] = {'domainStrategy': 'UseIPv4'}
         path = work / 'config.json'
         path.write_text(json.dumps(config))
         command = [binary, 'run', '-c', str(path)]
@@ -223,6 +227,17 @@ def run_case(binary, core, mode, supported, work, proxy, direct_tcp, direct_udp,
                 before_proxy_tcp = proxy.hits
                 assert send_tcp(port, target_tcp, 'stun1.localhost'), 'STUN domain was not proxied'
                 assert proxy.hits > before_proxy_tcp
+            if mode and supported:
+                before_proxy_tcp = proxy.hits
+                send_tcp(port, 80, 'dl.steam.clngaa.com')
+                assert proxy.hits == before_proxy_tcp, 'Domestic download unexpectedly used the proxy'
+                trace = logpath.read_text()
+                expected = 'dial DIRECT' if core == 'mihomo' else 'taking detour [direct]'
+                assert expected in trace, 'No core evidence of Steam download direct route: ' + trace
+                assert send_tcp(port, target_tcp, 'dl.steam.clngaa.com'), 'Non-HTTP CDN port must use proxy'
+                assert send_udp(port, target_udp, 'dl.steam.clngaa.com'), 'CDN UDP must use proxy'
+                assert send_tcp(port, 80, 'store.steampowered.com'), 'Steam store must use proxy'
+                assert proxy.hits >= before_proxy_tcp + 2
             print(f'PASS {core} mode={mode or "off"} proxy={"UDP-capable" if supported else "UDP-unsupported/down"}', flush=True)
         except Exception:
             print(logpath.read_text(), file=sys.stderr)
@@ -250,8 +265,7 @@ def main():
     try:
         with tempfile.TemporaryDirectory(prefix='leora-packets-') as temp:
             for core, binary in [('mihomo', args.mihomo), ('xray', args.xray)]:
-                for mode, supported in [(None, True), ('udp', True), ('udp', False),
-                                        ('strict', True), ('strict', False)]:
+                for mode, supported in [(None, True), ('strict', True), ('strict', False)]:
                     work = pathlib.Path(temp) / (core + '-' + str(mode) + '-' + str(supported))
                     work.mkdir()
                     run_case(str(pathlib.Path(binary).resolve()), core, mode, supported,

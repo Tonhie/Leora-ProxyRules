@@ -1,46 +1,23 @@
 # Leora Proxy Rules
 
-Shadowrocket、Mihomo（Clash Meta）和 Xray 分流规则。不含代理节点，需配合已有节点使用。
+仅维护带 WebRTC 防护的配置，保留广告拦截，不含节点。
 
-## 使用
-
-| 客户端 | 配置地址 | 用法 |
+| 客户端 | 配置入口 | 用法 |
 | --- | --- | --- |
-| Shadowrocket | [Leora-Shadowrocket-Rules.conf](https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/Leora-Shadowrocket-Rules.conf) | 在「配置」中添加远程配置，下载并选中 |
-| Mihomo | [Leora-Clash-Routing.yaml](https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/Leora-Clash-Routing.yaml) | 将 `rule-providers` 和 `rules` 合并进已有配置；需有 `PROXY` 代理或策略组 |
-| Xray | [Leora-Xray-Routing.json](https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/Leora-Xray-Routing.json) | 使用下方命令合并进完整的 Xray JSON 配置 |
-
-Mihomo 可按需合并 [DNS 示例](Leora-Clash-DNS.yaml)；校园和 Tailscale DNS 需对应网络可达。旧版 Clash 不保证兼容。
-
-```bash
-# 在本仓库目录运行；默认代理出口标签为 proxy
-python3 merge_xray.py --input original.json --output routed.json
-# 其他代理出口标签
-python3 merge_xray.py --input original.json --output routed.json --proxy-tag your-proxy-tag
-```
-
-合并会替换原有通用路由，保留 API 专用路由；使用前备份原配置。
-
-## WebRTC 防泄漏（可选）
-
-```bash
-python3 merge_mihomo.py --input original.yaml --output protected.yaml --webrtc udp
-python3 merge_xray.py --input original.json --output protected.json --webrtc udp
-```
-
-两档都先执行广告拒绝规则。`udp` 将其余已接管 UDP 强制代理，其他 TCP 保留分流；`strict` 将其余 TCP/UDP 全部代理，保留广告拦截但取消直连。必须启用客户端 TUN/VPN 并接管 IPv4/IPv6；仅系统代理不足。详细用法、配置模板和限制见 [WEBRTC.md](WEBRTC.md)。
-
-## 更新
-
-在 GitHub Actions 中运行 **Refresh Leora rules**，或本地执行：
+| Shadowrocket | [Leora-ProxyRules.conf](https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/Leora-ProxyRules.conf) | 添加远程配置，下载并选中 |
+| Mihomo | [Leora-Clash-Routing.yaml](https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/Leora-Clash-Routing.yaml) | 与现有节点配置合并，含 DNS/TUN 设置 |
+| Xray | [Leora-Xray-Routing.json](https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/Leora-Xray-Routing.json) | 合并到完整 Xray 配置 |
 
 ```bash
 python3 -m pip install -r requirements.txt
-python3 build_rules.py
+python3 merge_mihomo.py --input original.yaml --output protected.yaml
+python3 merge_xray.py --input original.json --output protected.json
 ```
 
-需要 Python 3.10+。生成器读取仓库 `main` 分支的 `Leora-ProxyRules.conf`；修改后先推送该文件。`source/` 为来源快照，Shadowrocket 配置单独维护；转换文件本地生成后需提交并推送。
+Mihomo 默认目标为 `PROXY`，Xray 为 `proxy`，可用 `--proxy-name` / `--proxy-tag` 修改。没有关闭防护或切换旧模式的参数。
 
-## 差异
+**Steam：已识别的国内下载 CDN 直连，商店/社区走代理。** Mihomo/Xray 仅放行这些 CDN 的 TCP 80/443 直连，UDP 仍代理或拒绝；其他流量在广告拦截后代理，不再使用普通国内直连分流。下载区域需在 Steam 中选择中国大陆，未列入的 CDN 走代理，不保证强制分配国内 CDN。
 
-跨客户端转换不完全等价：USER-AGENT/URL-REGEX 不转换，Xray 的 DNS 解析及 ASN 匹配存在差异。普通路由文件不包含 WebRTC 防护；可选防护也不提供 Shadowrocket 的 STUN 应答伪装。详见 [转换报告](conversion-report.json)。第三方规则权利归各来源项目。
+Shadowrocket 使用 STUN 应答伪装并保留其他原分流；Mihomo/Xray 不伪造 STUN。客户端必须接管 IPv4/IPv6 和 UDP；配置文件不能保证所有设备都不泄漏。详见 [用法与验证](USAGE.md)。
+
+更新：运行 GitHub Actions **Refresh Leora rules**，或执行 `python3 build_rules.py` 后提交生成文件。生成器读取本地 `Leora-ProxyRules.conf` 的广告来源；Steam 例外集中维护于 `routing_policy.py`，三端一致性由测试检查。第三方列表权利归来源项目。

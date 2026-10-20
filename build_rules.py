@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Build linked Mihomo routing and ordered Xray overlays; fail on unknown rule types.
+"""Build protected Mihomo and Xray profiles from Shadowrocket blocking sources.
 Python 3.10+, pip install PyYAML. No subscription credentials are needed.
 """
 import argparse, concurrent.futures, datetime, hashlib, ipaddress, json, pathlib, re, urllib.request
 import yaml
+from routing_policy import mihomo_settings, protected_mihomo, protected_xray
 SOURCE='https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/Leora-ProxyRules.conf'
 DEFAULT_BASE='https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main'
 P=pathlib.Path(__file__).resolve().parent
 CACHE=P/'.cache'; CACHE.mkdir(exist_ok=True)
-AUDIT=[]
 
 def fetch(url):
     path=CACHE/hashlib.sha256(url.encode()).hexdigest()
@@ -67,18 +67,17 @@ def dump(name,obj):
     (P/name).write_text(yaml.safe_dump(obj,allow_unicode=True,sort_keys=False,width=110) if name.endswith('.yaml') else json.dumps(obj,ensure_ascii=False,separators=(',',':'))+'\n')
 
 def run():
-    conf=fetch(SOURCE)
+    conf=(P/'Leora-ProxyRules.conf').read_text()
     entries=[];in_rules=False
     for line in conf.splitlines():
         line=line.strip()
         if line.startswith('['):in_rules=line=='[Rule]';continue
         if in_rules and line and not line.startswith('#'):entries.append(line)
+    entries=[l for l in entries if l.startswith(('RULE-SET,','DOMAIN-SET,')) and l.split(',')[2]=='REJECT']
     sources=list(dict.fromkeys(l.split(',')[1] for l in entries if l.startswith(('RULE-SET,','DOMAIN-SET,'))))
     alts=list(dict.fromkeys(filter(None,map(alternative,sources))))
     alts += [u.removesuffix('.yaml')+'_Domain.yaml' for u in list(alts) if any('/'+x+'/'+x+'.yaml' in u for x in ('China','Global','Apple'))]
-    asns=[32934,211157,44907,59930,62014,62041,132203]
-    as_urls={n:f'https://stat.ripe.net/data/announced-prefixes/data.json?resource=AS{n}' for n in asns}
-    required=[SOURCE]+sources+list(as_urls.values())
+    required=sources
     data={}
     with concurrent.futures.ThreadPoolExecutor(max_workers=12) as ex:
         for u,t in zip(required,ex.map(fetch,required)):data[u]=t
@@ -89,21 +88,13 @@ def run():
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as ex:
         for u,t in ex.map(optional,alts):
             if t is not None:data[u]=t
-    as_prefix={}
-    for n,u in as_urls.items():
-        obj=json.loads(data[u]);assert obj['status']=='ok',obj
-        as_prefix[n]=list(dict.fromkeys(str(ipaddress.ip_network(x['prefix'],strict=False)) for x in obj['data']['prefixes']))
-    providers={};clash=[];xr=[];domain_groups=[]
+    providers={};clash=[];xr=[]
     conversions=[]
-    # SR skip-proxy / excluded local networks, before its Rule section.
-    local_domains=[('DOMAIN','localhost',False),('DOMAIN-SUFFIX','local',False),('DOMAIN-SUFFIX','ts.net',False)]
-    local_ips=[('IP-CIDR',s,True) for s in ['10.0.0.0/8','100.64.0.0/10','127.0.0.0/8','169.254.0.0/16','172.16.0.0/12','192.168.0.0/16']]
-    clash.extend(classic(r)+',DIRECT' if not r[2] else ','.join(classic(r).split(',')[:2])+',DIRECT,no-resolve' for r in local_domains+local_ips)
     def xray_rules(rules,target,label):
         tag={'DIRECT':'direct','PROXY':'proxy','REJECT':'block'}[target]
         # Only coalesce adjacent same-condition rules. Never reorder domains vs IPs.
         for k,v,nr in rules:
-            if k=='IP-ASN':key,vals='ip',as_prefix[int(v)]
+            if k=='IP-ASN':raise ValueError('ASN matches in blocking sources require an explicit converter')
             elif k in ('IP-CIDR','IP-CIDR6'):key,vals='ip',[v]
             else:
                 key='domain'
@@ -112,12 +103,8 @@ def run():
             if xr and xr[-1]['outboundTag']==tag and key in xr[-1] and xr[-1].get('ruleTag')==label:
                 xr[-1][key].extend(vals)
             else:xr.append({'type':'field',key:vals,'outboundTag':tag,'ruleTag':label})
-    xray_rules(local_domains+local_ips,'DIRECT','local-bypass')
     for i,line in enumerate(entries):
         a=line.split(',');typ=a[0]
-        if typ=='FINAL':clash.append('MATCH,'+a[1]);xr.append({'type':'field','network':'tcp,udp','outboundTag':'proxy','ruleTag':'final-proxy'});continue
-        if typ not in ('RULE-SET','DOMAIN-SET'):
-            rules,skipped=parse(','.join(a[:2]));clash.append(','.join(a));xray_rules(rules,a[2],f'inline-{i:02d}');continue
         u,target=a[1:3];rid=f'leora-{i:02d}'
         rules,skipped=parse(data[u],typ=='DOMAIN-SET')
         normalized=[classic(r) for r in rules]
@@ -173,11 +160,14 @@ def run():
     for r in xr:
         for k in ('domain','ip'):
             if k in r:r[k]=list(dict.fromkeys(r[k]))
-    dump('Leora-Clash-Routing.yaml',{'rule-providers':providers,'rules':clash})
-    campus={'tongji.edu.cn':'202.120.190.208','tsinghua.edu.cn':'166.111.8.28','pku.edu.cn':'162.105.129.122','fudan.edu.cn':'202.120.224.26','sjtu.edu.cn':'202.120.2.100','buaa.edu.cn':'202.112.128.51','ts.net':'100.100.100.100'}
+    clash=protected_mihomo(clash)
+    xr=protected_xray(xr)
+    dump('Leora-Clash-Routing.yaml',dict(mihomo_settings(),**{'rule-providers':providers,'rules':clash}))
     dump('Leora-Xray-Routing.json',{'routing':{'domainStrategy':'IPOnDemand','rules':xr}})
-    dump('Leora-Clash-DNS.yaml',{'ipv6':False,'dns':{'enable':True,'ipv6':False,'respect-rules':True,'default-nameserver':['223.5.5.5'],'proxy-server-nameserver':['https://dns.alidns.com/dns-query'],'direct-nameserver':['https://dns.alidns.com/dns-query'],'nameserver':['https://1.1.1.1/dns-query','https://1.0.0.1/dns-query'],'nameserver-policy':{'+.'+d:ip for d,ip in campus.items()}}})
-    dump('conversion-report.json',{'generated_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'source':SOURCE,'base':ARGS.base,'providers':conversions,'asn_sources':as_urls,'asn_prefix_counts':{n:len(v) for n,v in as_prefix.items()},'xray_rules':len(xr),'upstream_provider_count':sum(not r['url'].startswith(ARGS.base.rstrip('/')+'/providers/') for r in providers.values())})
+    used={v['url'].split('/providers/')[-1] for v in providers.values() if '/providers/' in v['url']}
+    for stale in (P/'providers').glob('leora-*.yaml'):
+        if stale.name not in used:stale.unlink()
+    dump('conversion-report.json',{'generated_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'source':SOURCE,'base':ARGS.base,'providers':conversions,'source_sha256':hashlib.sha256(conf.encode()).hexdigest(),'policy':'ads-first; UDP proxy-or-reject; trusted mainland Steam HTTP(S) direct; remaining traffic proxy','xray_rules':len(xr),'upstream_provider_count':sum(not r['url'].startswith(ARGS.base.rstrip('/')+'/providers/') for r in providers.values())})
     print(json.dumps({'providers':len(providers),'upstream_links':sum(not r['url'].startswith(ARGS.base.rstrip('/')+'/providers/') for r in providers.values()),'converted_providers':sum(r['url'].startswith(ARGS.base.rstrip('/')+'/providers/') for r in providers.values()),'xray_rules':len(xr),'unsupported_count':sum(len(r['unsupported']) for r in conversions)}))
 
 if __name__=='__main__':

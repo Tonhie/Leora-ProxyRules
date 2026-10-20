@@ -1,3 +1,29 @@
+mode: rule
+ipv6: true
+tun:
+  enable: true
+  stack: mixed
+  auto-route: true
+  auto-detect-interface: true
+  strict-route: true
+  inet6-address:
+  - fdfe:dcba:9876::1/126
+  dns-hijack:
+  - any:53
+  - tcp://any:53
+dns:
+  enable: true
+  ipv6: true
+  respect-rules: true
+  enhanced-mode: fake-ip
+  fake-ip-range: 198.18.0.1/16
+  default-nameserver:
+  - 223.5.5.5
+  proxy-server-nameserver:
+  - https://dns.alidns.com/dns-query
+  nameserver:
+  - https://1.1.1.1/dns-query#PROXY
+  - https://1.0.0.1/dns-query#PROXY
 rule-providers:
   leora-00:
     type: http
@@ -27,389 +53,28 @@ rule-providers:
     url: https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/providers/leora-03.yaml
     path: ./ruleset/leora-03.yaml
     interval: 86400
-  leora-06-remote-0:
-    type: http
-    behavior: classical
-    format: yaml
-    url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/China/China.yaml
-    path: ./ruleset/leora-06-remote-0.yaml
-    interval: 86400
-  leora-06-remote-1:
-    type: http
-    behavior: domain
-    format: yaml
-    url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/China/China_Domain.yaml
-    path: ./ruleset/leora-06-remote-1.yaml
-    interval: 86400
-  leora-06:
-    type: http
-    behavior: classical
-    format: yaml
-    url: https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/providers/leora-06.yaml
-    path: ./ruleset/leora-06.yaml
-    interval: 86400
-  leora-07:
-    type: http
-    behavior: classical
-    format: yaml
-    url: https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/providers/leora-07.yaml
-    path: ./ruleset/leora-07.yaml
-    interval: 86400
-  leora-08:
-    type: http
-    behavior: classical
-    format: yaml
-    url: https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/providers/leora-08.yaml
-    path: ./ruleset/leora-08.yaml
-    interval: 86400
-  leora-10:
-    type: http
-    behavior: classical
-    format: yaml
-    url: https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/providers/leora-10.yaml
-    path: ./ruleset/leora-10.yaml
-    interval: 86400
-  leora-11:
-    type: http
-    behavior: classical
-    format: yaml
-    url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Epic/Epic.yaml
-    path: ./ruleset/leora-11.yaml
-    interval: 86400
-  leora-12:
-    type: http
-    behavior: classical
-    format: text
-    url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/Game/Game.list
-    path: ./ruleset/leora-12.text
-    interval: 86400
-  leora-13:
-    type: http
-    behavior: classical
-    format: text
-    url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/Lan/Lan.list
-    path: ./ruleset/leora-13.text
-    interval: 86400
-  leora-14:
-    type: http
-    behavior: classical
-    format: text
-    url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/Nintendo/Nintendo.list
-    path: ./ruleset/leora-14.text
-    interval: 86400
-  leora-15:
-    type: http
-    behavior: classical
-    format: yaml
-    url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Sony/Sony.yaml
-    path: ./ruleset/leora-15.yaml
-    interval: 86400
-  leora-16:
-    type: http
-    behavior: classical
-    format: yaml
-    url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Steam/Steam.yaml
-    path: ./ruleset/leora-16.yaml
-    interval: 86400
-  leora-17:
-    type: http
-    behavior: classical
-    format: yaml
-    url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/SteamCN/SteamCN.yaml
-    path: ./ruleset/leora-17.yaml
-    interval: 86400
-  leora-18:
-    type: http
-    behavior: classical
-    format: yaml
-    url: https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/providers/leora-18.yaml
-    path: ./ruleset/leora-18.yaml
-    interval: 86400
-  leora-19:
-    type: http
-    behavior: classical
-    format: yaml
-    url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/AppleNews/AppleNews.yaml
-    path: ./ruleset/leora-19.yaml
-    interval: 86400
-  leora-20:
-    type: http
-    behavior: classical
-    format: yaml
-    url: https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/providers/leora-20.yaml
-    path: ./ruleset/leora-20.yaml
-    interval: 86400
-  leora-21:
-    type: http
-    behavior: classical
-    format: yaml
-    url: https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/providers/leora-21.yaml
-    path: ./ruleset/leora-21.yaml
-    interval: 86400
-  leora-22:
-    type: http
-    behavior: classical
-    format: yaml
-    url: https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/providers/leora-22.yaml
-    path: ./ruleset/leora-22.yaml
-    interval: 86400
-  leora-23:
-    type: http
-    behavior: classical
-    format: text
-    url: https://raw.githubusercontent.com/PaPerseller/chn-iplist/master/ruleset/proxy-special.list
-    path: ./ruleset/leora-23.text
-    interval: 86400
-  leora-24:
-    type: http
-    behavior: classical
-    format: yaml
-    url: https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/providers/leora-24.yaml
-    path: ./ruleset/leora-24.yaml
-    interval: 86400
-  leora-25:
-    type: http
-    behavior: classical
-    format: yaml
-    url: https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/providers/leora-25.yaml
-    path: ./ruleset/leora-25.yaml
-    interval: 86400
-  leora-26:
-    type: http
-    behavior: classical
-    format: yaml
-    url: https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/providers/leora-26.yaml
-    path: ./ruleset/leora-26.yaml
-    interval: 86400
-  leora-27:
-    type: http
-    behavior: classical
-    format: text
-    url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/Facebook/Facebook.list
-    path: ./ruleset/leora-27.text
-    interval: 86400
-  leora-28:
-    type: http
-    behavior: classical
-    format: yaml
-    url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/GitHub/GitHub.yaml
-    path: ./ruleset/leora-28.yaml
-    interval: 86400
-  leora-29:
-    type: http
-    behavior: classical
-    format: yaml
-    url: https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/providers/leora-29.yaml
-    path: ./ruleset/leora-29.yaml
-    interval: 86400
-  leora-30:
-    type: http
-    behavior: classical
-    format: yaml
-    url: https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/providers/leora-30.yaml
-    path: ./ruleset/leora-30.yaml
-    interval: 86400
-  leora-31:
-    type: http
-    behavior: classical
-    format: yaml
-    url: https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/providers/leora-31.yaml
-    path: ./ruleset/leora-31.yaml
-    interval: 86400
-  leora-32:
-    type: http
-    behavior: classical
-    format: yaml
-    url: https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/providers/leora-32.yaml
-    path: ./ruleset/leora-32.yaml
-    interval: 86400
-  leora-33:
-    type: http
-    behavior: classical
-    format: yaml
-    url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/PayPal/PayPal.yaml
-    path: ./ruleset/leora-33.yaml
-    interval: 86400
-  leora-34:
-    type: http
-    behavior: classical
-    format: yaml
-    url: https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/providers/leora-34.yaml
-    path: ./ruleset/leora-34.yaml
-    interval: 86400
-  leora-35:
-    type: http
-    behavior: classical
-    format: yaml
-    url: https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/providers/leora-35.yaml
-    path: ./ruleset/leora-35.yaml
-    interval: 86400
-  leora-36:
-    type: http
-    behavior: classical
-    format: text
-    url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/Telegram/Telegram.list
-    path: ./ruleset/leora-36.text
-    interval: 86400
-  leora-37:
-    type: http
-    behavior: classical
-    format: yaml
-    url: https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/providers/leora-37.yaml
-    path: ./ruleset/leora-37.yaml
-    interval: 86400
-  leora-38:
-    type: http
-    behavior: classical
-    format: text
-    url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/Twitter/Twitter.list
-    path: ./ruleset/leora-38.text
-    interval: 86400
-  leora-39:
-    type: http
-    behavior: classical
-    format: yaml
-    url: https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/providers/leora-39.yaml
-    path: ./ruleset/leora-39.yaml
-    interval: 86400
-  leora-40-remote-0:
-    type: http
-    behavior: domain
-    format: yaml
-    url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Apple/Apple_Domain.yaml
-    path: ./ruleset/leora-40-remote-0.yaml
-    interval: 86400
-  leora-40:
-    type: http
-    behavior: classical
-    format: yaml
-    url: https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/providers/leora-40.yaml
-    path: ./ruleset/leora-40.yaml
-    interval: 86400
-  leora-41-remote-0:
-    type: http
-    behavior: classical
-    format: yaml
-    url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/WeChat/WeChat.yaml
-    path: ./ruleset/leora-41-remote-0.yaml
-    interval: 86400
-  leora-41:
-    type: http
-    behavior: classical
-    format: yaml
-    url: https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/providers/leora-41.yaml
-    path: ./ruleset/leora-41.yaml
-    interval: 86400
-  leora-42:
-    type: http
-    behavior: classical
-    format: yaml
-    url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Baidu/Baidu.yaml
-    path: ./ruleset/leora-42.yaml
-    interval: 86400
-  leora-43:
-    type: http
-    behavior: classical
-    format: yaml
-    url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/DouBan/DouBan.yaml
-    path: ./ruleset/leora-43.yaml
-    interval: 86400
-  leora-44:
-    type: http
-    behavior: classical
-    format: yaml
-    url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/DouYin/DouYin.yaml
-    path: ./ruleset/leora-44.yaml
-    interval: 86400
-  leora-45:
-    type: http
-    behavior: classical
-    format: yaml
-    url: https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/providers/leora-45.yaml
-    path: ./ruleset/leora-45.yaml
-    interval: 86400
-  leora-46:
-    type: http
-    behavior: classical
-    format: yaml
-    url: https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/providers/leora-46.yaml
-    path: ./ruleset/leora-46.yaml
-    interval: 86400
-  leora-47:
-    type: http
-    behavior: classical
-    format: yaml
-    url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/XiaoHongShu/XiaoHongShu.yaml
-    path: ./ruleset/leora-47.yaml
-    interval: 86400
-  leora-48:
-    type: http
-    behavior: classical
-    format: text
-    url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/Zhihu/Zhihu.list
-    path: ./ruleset/leora-48.text
-    interval: 86400
 rules:
-- DOMAIN,localhost,DIRECT
-- DOMAIN-SUFFIX,local,DIRECT
-- DOMAIN-SUFFIX,ts.net,DIRECT
-- IP-CIDR,10.0.0.0/8,DIRECT,no-resolve
-- IP-CIDR,100.64.0.0/10,DIRECT,no-resolve
-- IP-CIDR,127.0.0.0/8,DIRECT,no-resolve
-- IP-CIDR,169.254.0.0/16,DIRECT,no-resolve
-- IP-CIDR,172.16.0.0/12,DIRECT,no-resolve
-- IP-CIDR,192.168.0.0/16,DIRECT,no-resolve
 - RULE-SET,leora-00,REJECT
 - RULE-SET,leora-01,REJECT
 - RULE-SET,leora-02,REJECT
 - RULE-SET,leora-03,REJECT
-- DOMAIN-SUFFIX,browserleaks.com,PROXY
-- DOMAIN-SUFFIX,ip138.com,PROXY
-- RULE-SET,leora-06-remote-0,DIRECT
-- RULE-SET,leora-06-remote-1,DIRECT
-- RULE-SET,leora-06,DIRECT
-- RULE-SET,leora-07,DIRECT
-- RULE-SET,leora-08,DIRECT
-- DOMAIN-SUFFIX,tonhie.online,DIRECT
-- RULE-SET,leora-10,DIRECT
-- RULE-SET,leora-11,DIRECT
-- RULE-SET,leora-12,DIRECT
-- RULE-SET,leora-13,DIRECT
-- RULE-SET,leora-14,DIRECT
-- RULE-SET,leora-15,DIRECT
-- RULE-SET,leora-16,DIRECT
-- RULE-SET,leora-17,DIRECT
-- RULE-SET,leora-18,PROXY
-- RULE-SET,leora-19,PROXY
-- RULE-SET,leora-20,PROXY
-- RULE-SET,leora-21,DIRECT
-- RULE-SET,leora-22,DIRECT
-- RULE-SET,leora-23,PROXY
-- RULE-SET,leora-24,PROXY
-- RULE-SET,leora-25,PROXY
-- RULE-SET,leora-26,PROXY
-- RULE-SET,leora-27,PROXY
-- RULE-SET,leora-28,PROXY
-- RULE-SET,leora-29,PROXY
-- RULE-SET,leora-30,PROXY
-- RULE-SET,leora-31,PROXY
-- RULE-SET,leora-32,PROXY
-- RULE-SET,leora-33,PROXY
-- RULE-SET,leora-34,PROXY
-- RULE-SET,leora-35,PROXY
-- RULE-SET,leora-36,PROXY
-- RULE-SET,leora-37,PROXY
-- RULE-SET,leora-38,PROXY
-- RULE-SET,leora-39,PROXY
-- RULE-SET,leora-40-remote-0,DIRECT
-- RULE-SET,leora-40,DIRECT
-- RULE-SET,leora-41-remote-0,DIRECT
-- RULE-SET,leora-41,DIRECT
-- RULE-SET,leora-42,DIRECT
-- RULE-SET,leora-43,DIRECT
-- RULE-SET,leora-44,DIRECT
-- RULE-SET,leora-45,DIRECT
-- RULE-SET,leora-46,DIRECT
-- RULE-SET,leora-47,DIRECT
-- RULE-SET,leora-48,DIRECT
+- NETWORK,udp,PROXY
+- NETWORK,udp,REJECT
+- DOMAIN-SUFFIX,steampowered.com,PROXY
+- DOMAIN-SUFFIX,steamcommunity.com,PROXY
+- DOMAIN-SUFFIX,steamstatic.com,PROXY
+- DOMAIN-SUFFIX,steamchina.com,PROXY
+- DOMAIN-SUFFIX,steamstore-a.akamaihd.net,PROXY
+- AND,((NETWORK,tcp),(DST-PORT,80/443),(DOMAIN,dl.steam.clngaa.com)),DIRECT
+- AND,((NETWORK,tcp),(DST-PORT,80/443),(DOMAIN,dl.steam.ksyna.com)),DIRECT
+- AND,((NETWORK,tcp),(DST-PORT,80/443),(DOMAIN,st.dl.bscstorage.net)),DIRECT
+- AND,((NETWORK,tcp),(DST-PORT,80/443),(DOMAIN,st.dl.eccdnx.com)),DIRECT
+- AND,((NETWORK,tcp),(DST-PORT,80/443),(DOMAIN,st.dl.pinyuncloud.com)),DIRECT
+- AND,((NETWORK,tcp),(DST-PORT,80/443),(DOMAIN,steampipe.steamcontent.tnkjmec.com)),DIRECT
+- AND,((NETWORK,tcp),(DST-PORT,80/443),(DOMAIN,steampowered.com.8686c.com)),DIRECT
+- AND,((NETWORK,tcp),(DST-PORT,80/443),(DOMAIN,steamstatic.com.8686c.com)),DIRECT
+- AND,((NETWORK,tcp),(DST-PORT,80/443),(DOMAIN,xz.pphimalayanrt.com)),DIRECT
+- AND,((NETWORK,tcp),(DST-PORT,80/443),(DOMAIN,cdn-ali.content.steamchina.com)),DIRECT
+- AND,((NETWORK,tcp),(DST-PORT,80/443),(DOMAIN,cdn-qc.content.steamchina.com)),DIRECT
+- AND,((NETWORK,tcp),(DST-PORT,80/443),(DOMAIN,cdn-ws.content.steamchina.com)),DIRECT
 - MATCH,PROXY

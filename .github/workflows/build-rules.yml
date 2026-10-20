@@ -7,9 +7,7 @@ on:
       - build_rules.py
       - merge_mihomo.py
       - merge_xray.py
-      - webrtc_guard.py
-      - Leora-Mihomo-WebRTC.yaml
-      - Leora-Xray-WebRTC.json
+      - routing_policy.py
       - tests/**
       - .github/workflows/build-rules.yml
 permissions:
@@ -26,18 +24,18 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install -r requirements.txt
-      - name: Test routing merges and WebRTC guards
-        run: python -m unittest discover -s tests -v
       - name: Build from remote sources
         env:
           REPOSITORY: ${{ github.repository }}
           REF_NAME: ${{ github.ref_name }}
         run: python build_rules.py --base "https://raw.githubusercontent.com/$REPOSITORY/refs/heads/$REF_NAME"
+      - name: Validate generated profiles and merge tools
+        run: python -m unittest discover -s tests -v
       - name: Commit refreshed files
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add Leora-Clash-Routing.yaml Leora-Clash-DNS.yaml Leora-Xray-Routing.json providers conversion-report.json
+          git add Leora-Clash-Routing.yaml Leora-Xray-Routing.json providers conversion-report.json
           if ! git diff --cached --quiet; then
             git commit -m "Refresh converted Leora rules"
             git push
