@@ -5,7 +5,7 @@ import unittest
 import yaml
 from merge_mihomo import merge_config
 from merge_xray import merge_subscription
-from routing_policy import STEAM_DOWNLOADS, STEAM_DOWNLOAD_SUFFIXES, STEAM_PROXY, mihomo_rules, xray_rules, mihomo_local_rules, xray_dns
+from routing_policy import STEAM_DOWNLOADS, STEAM_PROXY, protected_mihomo, protected_xray, xray_dns
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -13,53 +13,70 @@ ROOT = Path(__file__).resolve().parents[1]
 class PolicyTests(unittest.TestCase):
     def setUp(self):
         self.m = {'proxies': [{'name': 'PROXY', 'type': 'socks5', 'server': '127.0.0.1', 'port': 9}]}
-        self.mrules = {'rules': ['MATCH,DIRECT', 'DOMAIN,ads.example,REJECT'], 'rule-providers': {}}
+        self.mrules = {'rules': ['DOMAIN,ads.example,REJECT', 'DOMAIN,proxy.example,PROXY', 'DOMAIN-SUFFIX,example,DIRECT', 'MATCH,PROXY'], 'rule-providers': {}}
         self.x = {'outbounds': [{'tag': 'proxy', 'protocol': 'socks'}],
                   'routing': {'rules': [{'inboundTag': ['api'], 'outboundTag': 'api'}]}}
         self.xr = {'routing': {'rules': [
-            {'type': 'field', 'network': 'tcp,udp', 'outboundTag': 'direct'},
-            {'type': 'field', 'domain': ['full:ads.example'], 'outboundTag': 'block'}]}}
+            {'type': 'field', 'domain': ['full:ads.example'], 'outboundTag': 'block'},
+            {'type': 'field', 'domain': ['full:proxy.example'], 'outboundTag': 'proxy'},
+            {'type': 'field', 'domain': ['domain:example'], 'outboundTag': 'direct'},
+            {'type': 'field', 'network': 'tcp,udp', 'outboundTag': 'proxy'}]}}
 
-    def test_mihomo_default_is_ads_then_protection_and_steam_then_proxy(self):
+    def test_mihomo_preserves_order_and_only_guards_proxy_matches(self):
         original = copy.deepcopy(self.m)
         result = merge_config(self.m, self.mrules)
-        offset = len(mihomo_local_rules())
-        self.assertEqual(result['rules'][offset], 'DOMAIN,ads.example,REJECT')
-        self.assertEqual(result['rules'][offset+1:offset+3], ['NETWORK,udp,PROXY', 'NETWORK,udp,REJECT'])
-        self.assertEqual(result['rules'][-1], 'MATCH,PROXY')
-        self.assertNotIn('MATCH,DIRECT', result['rules'])
+        self.assertEqual(result['rules'], [
+            'DOMAIN,ads.example,REJECT', 'DOMAIN,proxy.example,PROXY',
+            'AND,((NETWORK,udp),(DOMAIN,proxy.example)),REJECT',
+            'DOMAIN-SUFFIX,example,DIRECT', 'MATCH,PROXY', 'NETWORK,udp,REJECT'])
         self.assertTrue(result['tun']['enable'])
-        self.assertTrue(result['ipv6'])
         self.assertEqual(original, self.m)
-        self.assertEqual(merge_config(result, self.mrules), result)
+        self.assertEqual(protected_mihomo(result['rules']), result['rules'])
 
-    def test_xray_protects_arrays_preserving_api_and_syncing_dns(self):
-        self.x['dns'] = {'servers': ['localhost']}
+    def test_xray_preserves_all_rules_and_api(self):
         original = copy.deepcopy(self.x)
         result = merge_subscription([self.x], self.xr)[0]
         rules = result['routing']['rules']
         self.assertEqual(rules[0]['inboundTag'], ['api'])
-        block = next(i for i,r in enumerate(rules) if r.get('outboundTag')=='block')
-        udp = next(i for i,r in enumerate(rules) if r.get('ruleTag')=='udp-proxy')
-        self.assertLess(block, udp)
-        self.assertEqual(rules[-1]['outboundTag'], 'proxy')
+        self.assertEqual(rules[3:], self.xr['routing']['rules'])
         self.assertEqual(self.x, original)
         self.assertEqual(result['dns'], xray_dns())
 
-    def test_steam_download_exception_has_transport_and_port_limits(self):
-        rules = mihomo_rules()
-        for domain in STEAM_DOWNLOADS:
-            rule = f'AND,((NETWORK,tcp),(DST-PORT,80/443),(DOMAIN,{domain})),DIRECT'
-            self.assertIn(rule, rules)
-            self.assertGreater(rules.index(rule), rules.index('NETWORK,udp,REJECT'))
-        direct = [r for r in xray_rules() if r.get('outboundTag') == 'direct']
-        self.assertEqual(len(direct), 1)
-        self.assertEqual(direct[0]['network'], 'tcp')
-        self.assertEqual(direct[0]['port'], '80,443')
-        self.assertEqual(set(direct[0]['domain']), {'full:' + d for d in STEAM_DOWNLOADS} | {'domain:' + d for d in STEAM_DOWNLOAD_SUFFIXES})
-        self.assertIn('AND,((NETWORK,tcp),(DST-PORT,80/443),(DOMAIN-SUFFIX,steamcontent.com)),DIRECT', rules)
-        self.assertNotIn('store.steampowered.com', STEAM_DOWNLOADS)
-        self.assertNotIn('steamcontent.com', STEAM_DOWNLOADS)
+    def test_generated_sources_and_inline_rules_match_shadowrocket(self):
+        import hashlib
+        source = (ROOT / 'Leora-ProxyRules.conf').read_text()
+        entries = [l.strip() for l in source.split('[Rule]',1)[1].split('[Host]',1)[0].splitlines()
+                   if l.strip() and not l.lstrip().startswith('#')]
+        remote = [l.split(',') for l in entries if l.startswith(('RULE-SET,','DOMAIN-SET,'))]
+        report = json.loads((ROOT/'conversion-report.json').read_text())
+        self.assertEqual([(r['source'],r['action']) for r in report['providers']],
+                         [(r[1],r[2]) for r in remote])
+        self.assertGreater(len(remote), 40)
+        self.assertEqual(report['source_sha256'], hashlib.sha256(source.encode()).hexdigest())
+        m = yaml.safe_load((ROOT/'Leora-Clash-Routing.yaml').read_text())
+        x = json.loads((ROOT/'Leora-Xray-Routing.json').read_text())['routing']['rules']
+        last_m = -1
+        last_x = -1
+        for i, line in enumerate(entries):
+            parts = line.split(',')
+            if parts[0] in ('RULE-SET','DOMAIN-SET'):
+                rid = f'leora-{i:02d}'
+                indexes = [j for j,r in enumerate(m['rules']) if r.startswith('RULE-SET,'+rid+',') or r.startswith('RULE-SET,'+rid+'-remote-')]
+                xi = [j for j,r in enumerate(x) if r.get('ruleTag')==rid]
+                self.assertTrue(indexes, line)
+                self.assertTrue(xi, line)
+            elif parts[0] == 'FINAL':
+                indexes = [m['rules'].index('MATCH,'+parts[1])]
+                xi = [j for j,r in enumerate(x) if r.get('ruleTag')=='final-proxy']
+            else:
+                indexes = [m['rules'].index(line, last_m + 1)]
+                xi = [j for j,r in enumerate(x) if r.get('ruleTag')==f'inline-{i:02d}']
+            action = parts[1] if parts[0]=='FINAL' else parts[2]
+            for j in xi:
+                self.assertEqual(x[j]['outboundTag'], {'DIRECT':'direct','PROXY':'proxy','REJECT':'block'}[action])
+            self.assertGreater(min(indexes), last_m, line)
+            self.assertGreater(min(xi), last_x, line)
+            last_m, last_x = max(indexes), max(xi)
 
     def test_shadowrocket_steam_overrides_precede_china_and_steam_proxy_list(self):
         text = (ROOT / 'Leora-ProxyRules.conf').read_text()
@@ -79,8 +96,8 @@ class PolicyTests(unittest.TestCase):
         m = yaml.safe_load((ROOT / 'Leora-Clash-Routing.yaml').read_text())
         x = json.loads((ROOT / 'Leora-Xray-Routing.json').read_text())
         self.assertTrue(m['tun']['enable'])
-        self.assertEqual(m['rules'][-len(mihomo_rules()):], mihomo_rules())
-        self.assertEqual(x['routing']['rules'][-len(xray_rules()):], xray_rules())
+        self.assertEqual(protected_mihomo(m['rules']), m['rules'])
+        self.assertEqual(protected_xray(x['routing']['rules']), x['routing']['rules'])
         self.assertEqual(merge_config(self.m, m)['rules'], m['rules'])
         self.assertEqual(merge_subscription(self.x, x)['routing']['rules'][1:], x['routing']['rules'])
 
@@ -92,11 +109,11 @@ class PolicyTests(unittest.TestCase):
     def test_custom_proxy_names_and_balancer_are_remapped(self):
         self.m['proxies'][0]['name'] = 'NODE'
         result = merge_config(self.m, self.mrules, 'NODE')
-        self.assertIn('NETWORK,udp,NODE', result['rules'])
+        self.assertIn('DOMAIN,proxy.example,NODE', result['rules'])
         self.assertTrue(result['dns']['nameserver'][0].endswith('#NODE'))
         self.x['routing']['balancers'] = [{'tag': 'pool', 'selector': ['proxy']}]
         result = merge_subscription(self.x, self.xr, proxy_balancer='pool')
-        self.assertEqual(next(r for r in result['routing']['rules'] if r.get('ruleTag')=='udp-proxy')['balancerTag'], 'pool')
+        self.assertEqual(next(r for r in result['routing']['rules'] if r.get('balancerTag'))['balancerTag'], 'pool')
 
     def test_direct_proxy_group_and_dynamic_members_are_rejected(self):
         for group in ({'proxies': ['DIRECT']}, {'use': ['sub']}, {'proxies': ['GROUP']}):
@@ -125,14 +142,12 @@ class PolicyTests(unittest.TestCase):
             self.assertTrue(server['skipFallback'])
             self.assertTrue(server['finalQuery'])
         tags = [r.get('ruleTag') for r in x['routing']['rules']]
-        self.assertLess(tags.index('split-domain-direct'), tags.index('udp-proxy'))
         self.assertLess(tags.index('split-dns-direct'), tags.index('dns-intercept'))
         self.assertIn('100.64.0.0/10', TAILNET_RANGES)
         self.assertIn('fd7a:115c:a1e0::/48', TAILNET_RANGES)
         source=(ROOT/'Leora-ProxyRules.conf').read_text()
         self.assertIn('100.64.0.0/10', source.split('tun-excluded-routes = ',1)[1].splitlines()[0])
         self.assertIn('IP-CIDR6,fd7a:115c:a1e0::/48,DIRECT,no-resolve', source)
-        self.assertLess(tags.index('tailnet-ip'), tags.index('dns-intercept'))
 
     def test_proxy_hostname_bootstrap_is_specific_and_private_nodes_stay_private(self):
         self.x['outbounds'][0]['settings'] = {'servers': [

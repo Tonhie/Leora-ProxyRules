@@ -7,11 +7,12 @@ Mihomo/Xray 通过“代理连接，代理不可用时失败”降低真实公�
 只有防护配置，没有普通版或模式开关。
 
 - Shadowrocket：使用 `Leora-ProxyRules.conf`，启用 STUN 应答伪装、UDP 不支持时拒绝，并保留原有其他分流。
-- Mihomo/Xray：**本地专用 DNS/校园/Tailscale 例外 → 广告拒绝 → UDP 代理（Mihomo 紧接拒绝兜底）→ Steam 商店代理 → 下载 CDN 的 TCP 80/443 直连 → 其余代理**。不使用普通国内直连；本地服务和下载例外是有意直连，不受公共流量代理隐藏保护。
-- Steam 下载例外是已知受信任 CDN 的有限直连，不是全局豁免 Steam，对 Valve 专用下载域 `steamcontent.com` 也仅允许 TCP 80/443。命中例外的 HTTP(S) 连接是有意直连，例外目标不提供代理隐藏；这不是“任何流量都不会暴露真实 IP”的承诺。
+- Mihomo/Xray：保留 Shadowrocket 的本地绕过、全部可转换分流规则及先后顺序。广告规则仍在原位置，国内/B站/Apple 等服务按源规则直连，其余按源规则代理；Steam 下载域名直连、商店/社区代理，不再额外限制下载端口或把所有 UDP 强制代理。
+- Mihomo 在每条 PROXY 规则后追加同条件的 UDP 拒绝兜底；代理不支持 UDP 时，不会继续落入后面的 DIRECT 规则。Xray 已选中代理出口后连接失败，不重试后续直连规则。原规则命中 DIRECT 的 TCP/UDP 保持直连。
+- **一致性边界：** 规则列表、动作与顺序同步，不代表核心能力完全相同。Shadowrocket 的 STUN 应答伪装不能转换到 Mihomo/Xray；源中的 USER-AGENT/URL-REGEX 不可直接转换，逐条记录在 `conversion-report.json`。Xray 的 ASN 规则转换为 RIPE 公告网段快照，`IPOnDemand` 无法逐条模拟 Shadowrocket 的 `no-resolve`。直连目标可能看到真实公网地址；防止 WebRTC 泄漏还应使用下述浏览器限制并做设备实测。
 - 下载区域须在 Steam 客户端选择中国大陆；规则不能控制 Steam 实际选择哪个 CDN，未知下载域名仍走代理。依据 [SteamCN](https://github.com/blackmatrix7/ios_rule_script/blob/master/rule/Shadowrocket/SteamCN/SteamCN.list) 和 [Steam](https://github.com/blackmatrix7/ios_rule_script/blob/master/rule/Shadowrocket/Steam/Steam.list) 列表筛选下载端点，排除商店、社区和其他宽泛的 SteamCN 直连范围。
 
-广告规则只能拦截覆盖范围内的广告。代理须支持 UDP 才能保留 UDP 通话；不支持时拒绝，不回退直连。校园和 Tailscale 访问通过明确的本地例外；其他局域网 UDP、游戏可能受到影响。STUN 伪装仍可能影响 Tailscale 的公网点对点发现，无法只靠这些配置保证直连打洞。客户端退出后的持续阻断需要系统或客户端 kill switch。
+广告规则只能拦截覆盖范围内的广告。代理规则须由支持 UDP 的节点转发 UDP，否则拒绝；直连规则保持直连。STUN 伪装可能影响 Tailscale 公网点对点发现，实际打洞仍需设备验证。客户端退出后的持续阻断需要系统或客户端 kill switch。
 
 ## Mihomo
 
@@ -28,7 +29,7 @@ python3 merge_mihomo.py --input original.yaml --output protected.yaml --proxy-na
 
 脚本保留节点及其他顶层配置，替换通用 `rules`，合并本仓库 `rule-providers`，并替换 `tun`、`dns`、`ipv6`、`mode`。旧 TUN 排除列表替换为 Tailscale 的两个地址段，不保留任意宽泛排除。应用前检查客户端是否额外注入绕过列表、应用排除、`listeners` 的专用规则或指定出站；这些可能绕过通用规则。
 
-DNS 使用 fake-IP 和经代理的 DoH。**fake-IP 不是 STUN 伪装。** 为避免启动循环，DNS 服务器和节点域名的引导解析允许直连；不声称完全隐藏引导 DNS。校园及 Tailscale 的域名专用 DNS 自动从 Shadowrocket `[Host]` 同步，专用查询显式使用 DIRECT；这些域名排除 fake-IP，返回真实地址。
+DNS 使用 fake-IP，代理目标使用经代理的 DoH，直连目标使用阿里 DoH；专用域名仍优先使用指定 DNS。**fake-IP 不是 STUN 伪装。** 为避免启动循环，DNS 服务器和节点域名的引导解析允许直连；不声称完全隐藏引导 DNS。校园及 Tailscale 的域名专用 DNS 自动从 Shadowrocket `[Host]` 同步，专用查询显式使用 DIRECT；这些域名排除 fake-IP，返回真实地址。
 
 代理目标必须是实际节点或能静态核验的策略组，组内不能包含 DIRECT、PASS 等；带动态 `use`/`include-all` 或成员过滤条件的分组无法核验，会明确报错。此时请将要用的实际节点放入 `proxies`，或建立只引用这些节点的静态策略组，再用 `--proxy-name` 指定。不要把带节点凭据的 `original.yaml`、`protected.yaml` 提交到公开仓库。
 
@@ -47,7 +48,7 @@ python3 merge_xray.py --input original.json --output protected.json --proxy-bala
 
 将 `protected.json` 加载到使用 Xray 的客户端。它必须是包含 `outbounds` 的完整 Xray 对象或对象数组；不是任意厂商的 JSON 订阅格式。默认且始终应用防护，无普通模式。
 
-脚本保留节点、传输和 balancer，替换 DNS 与公共路由。顺序为 API 专用规则、本地 DNS/服务例外、广告拒绝、防护及 Steam 分流。目标出口、balancer 候选及 `fallbackTag` 不能指向 freedom 直连等非代理出口。启用防护时拒绝带自定义路由脚本的叠加层，避免脚本覆盖防护。不要把含节点凭据的输入/输出文件上传公开仓库。
+脚本保留节点、传输和 balancer，替换 DNS 与公共路由。顺序为 API 专用规则、内部 DNS 接管规则、Shadowrocket 的本地绕过及完整分流顺序。目标出口、balancer 候选及 `fallbackTag` 不能指向 freedom 直连等非代理出口。启用防护时拒绝带自定义路由脚本的叠加层，避免脚本覆盖防护。不要把含节点凭据的输入/输出文件上传公开仓库。
 
 **JSON 路由不会自动安装 TUN 或接管系统 UDP。** 在客户端开启 VPN/TUN，允许 UDP 转发，确认 IPv6 被接管；客户端无法接管 IPv6 时，应在系统/网络层禁用或阻断 IPv6，不能只依靠 DNS 禁止 AAAA。关闭应用绕过/绕过大陆/自动直连回退，配置代理故障时阻断连接。客户端停止后如需继续阻断，也需客户端或操作系统的 kill switch；这些不由路由 JSON 提供。
 
@@ -98,7 +99,7 @@ python3 tests/verify_cores.py --mihomo /absolute/path/to/mihomo --xray /absolute
 python3 tests/verify_dns.py --mihomo /absolute/path/to/mihomo --xray /absolute/path/to/xray
 ```
 
-已用 Mihomo **1.19.32**、Xray **26.3.27** 验证主配置及合并结果。测试覆盖广告 TCP/UDP 优先拒绝、UDP 经代理收发、UDP 不支持/代理不可用时不落入直连、任意端口 TCP 经代理，以及 Steam 国内下载 TCP 80 的直连路径、同一 CDN 的其他端口/UDP 代理、商店代理。
+已用 Mihomo **1.19.32**、Xray **26.3.27** 验证主配置及合并结果。测试覆盖全部远程来源、动作与逐项规则顺序；广告 TCP/UDP 拒绝、代理 UDP 收发、不支持 UDP/代理不可用时不落入后续 DIRECT、普通 DIRECT 的 TCP/UDP，以及 Steam 下载 TCP/UDP 直连、商店代理。
 
 DNS 测试用本地解析器替身验证七组域名的根域/子域和专用 DNS 无记录时不回退；另验证尾网域名的 TCP/UDP 直连路径。没有实测校园 DNS 或实际尾网可达性。
 

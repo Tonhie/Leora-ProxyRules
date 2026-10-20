@@ -99,31 +99,6 @@ STEAM_PROXY = ('steampowered.com', 'steamcommunity.com', 'steamstatic.com',
                'steamchina.com', 'steamstore-a.akamaihd.net')
 
 
-def mihomo_rules(proxy_name='PROXY'):
-    if not proxy_name or any(c in proxy_name for c in ',\r\n#&'):
-        raise ValueError('Proxy name cannot contain commas, newlines, # or &')
-    # Unsupported UDP must hit REJECT before any direct exception.
-    return ([f'NETWORK,udp,{proxy_name}', 'NETWORK,udp,REJECT'] +
-            [f'DOMAIN-SUFFIX,{d},{proxy_name}' for d in STEAM_PROXY] +
-            [f'AND,((NETWORK,tcp),(DST-PORT,80/443),(DOMAIN,{d})),DIRECT'
-             for d in STEAM_DOWNLOADS] +
-            [f'AND,((NETWORK,tcp),(DST-PORT,80/443),(DOMAIN-SUFFIX,{d})),DIRECT'
-             for d in STEAM_DOWNLOAD_SUFFIXES] + [f'MATCH,{proxy_name}'])
-
-
-def xray_rules():
-    return [
-        {'type': 'field', 'network': 'udp', 'outboundTag': 'proxy', 'ruleTag': 'udp-proxy'},
-        {'type': 'field', 'domain': ['domain:' + d for d in STEAM_PROXY],
-         'outboundTag': 'proxy', 'ruleTag': 'steam-store'},
-        {'type': 'field', 'network': 'tcp', 'port': '80,443',
-         'domain': ['full:' + d for d in STEAM_DOWNLOADS] +
-                   ['domain:' + d for d in STEAM_DOWNLOAD_SUFFIXES],
-         'outboundTag': 'direct', 'ruleTag': 'steam-download'},
-        {'type': 'field', 'network': 'tcp,udp', 'outboundTag': 'proxy', 'ruleTag': 'final-proxy'},
-    ]
-
-
 def mihomo_settings():
     return {
         'mode': 'rule', 'ipv6': True,
@@ -138,20 +113,46 @@ def mihomo_settings():
                 'nameserver-policy': {'+.' + d: 'udp://' + ip + '#DIRECT' for d, ip in split_dns().items()},
                 'default-nameserver': ['223.5.5.5'],
                 'proxy-server-nameserver': ['https://dns.alidns.com/dns-query'],
+                'direct-nameserver': ['https://dns.alidns.com/dns-query'],
                 'nameserver': ['https://1.1.1.1/dns-query#PROXY',
                                'https://1.0.0.1/dns-query#PROXY']}}
 
 
 def protected_mihomo(rules, proxy_name='PROXY'):
-    # Do not promote our own UDP fallback when re-merging a published profile.
-    rejects = [r for r in rules if r != 'NETWORK,udp,REJECT' and
-               (r.split(',')[-1] in ('REJECT', 'REJECT-DROP') or
-                (r.endswith(',no-resolve') and r.split(',')[-2] in ('REJECT', 'REJECT-DROP')))]
-    return mihomo_local_rules() + rejects + mihomo_rules(proxy_name)
+    """Preserve source order; fail closed only after a matching proxy rule.
+
+    Mihomo skips a proxy without UDP support and continues matching rules.
+    An adjacent UDP reject for that same condition prevents falling into a
+    later DIRECT rule. Applying this twice must not duplicate the guards.
+    """
+    if not proxy_name or any(c in proxy_name for c in ',\r\n#&'):
+        raise ValueError('Invalid proxy name')
+    result = []
+    for index, rule in enumerate(rules):
+        parts = rule.split(',')
+        pos = -2 if parts[-1] == 'no-resolve' else -1
+        if parts[pos] == 'PROXY':
+            parts[pos] = proxy_name
+        mapped = ','.join(parts)
+        result.append(mapped)
+        if parts[pos] != proxy_name:
+            continue
+        condition = ','.join(parts[:pos])
+        guard = ('NETWORK,udp,REJECT' if condition == 'MATCH' else
+                 'AND,((NETWORK,udp),(' + condition + ')),REJECT' +
+                 (',no-resolve' if pos == -2 else ''))
+        if index + 1 == len(rules) or rules[index + 1] != guard:
+            result.append(guard)
+    return result
 
 
 def protected_xray(rules):
-    return xray_local_rules() + [r for r in rules if r.get('outboundTag') == 'block'] + xray_rules()
+    # DNS plumbing precedes user traffic rules. Never discard DIRECT or PROXY
+    # entries, and never promote a later rule ahead of its source position.
+    internal = [r for r in xray_local_rules()
+                if r['ruleTag'] in ('split-dns-direct', 'dns-intercept')]
+    tags = {r['ruleTag'] for r in internal}
+    return internal + [r for r in rules if r.get('ruleTag') not in tags]
 
 
 def validate_xray_proxy(config, proxy_tag, proxy_balancer):

@@ -140,14 +140,21 @@ def run_case(binary, core, mode, supported, work, proxy, direct_tcp, direct_udp,
     target_tcp = direct_tcp.server_address[1]
     target_udp = direct_udp.getsockname()[1]
     proxy_port = proxy.server_address[1] if supported else free_port()
+    # Match fixtures keep source precedence and deliberately put a DIRECT rule
+    # after a proxy rule, exposing unsupported-UDP fallthrough regressions.
     overlay = {'routing': {'rules': [
-        {'type': 'field', 'network': 'tcp,udp', 'outboundTag': 'direct'},
-        {'type': 'field', 'domain': ['full:stun.ads.localhost'], 'outboundTag': 'block'}]}}
+        {'type': 'field', 'domain': ['full:stun.ads.localhost'], 'outboundTag': 'block'},
+        {'type': 'field', 'domain': ['domain:ts.net', 'full:dl.steam.clngaa.com', 'domain:steamcontent.com'], 'outboundTag': 'direct'},
+        {'type': 'field', 'domain': ['domain:steampowered.com', 'full:proxy.example'], 'outboundTag': 'proxy'},
+        {'type': 'field', 'domain': ['domain:example'], 'outboundTag': 'direct'},
+        {'type': 'field', 'network': 'tcp,udp', 'outboundTag': 'proxy'}]}}
+    if not mode:
+        overlay = {'routing': {'rules': [{'type': 'field', 'network': 'tcp,udp', 'outboundTag': 'direct'}]}}
     if core == 'mihomo':
         node = {'name': 'PROXY', 'type': 'socks5' if supported else 'http',
                 'server': '127.0.0.1', 'port': proxy_port, 'udp': supported}
-        base = {'socks-port': port, 'bind-address': '127.0.0.1', 'proxies': [node], 'hosts': {'dl.steam.clngaa.com': '127.0.0.1', 'cache1-sha1.steamcontent.com': '127.0.0.1', 'peer.tail.ts.net': '127.0.0.1'}}
-        routing = {'rules': ['MATCH,DIRECT', 'DOMAIN,stun.ads.localhost,REJECT']}
+        base = {'socks-port': port, 'bind-address': '127.0.0.1', 'proxies': [node], 'hosts': {'dl.steam.clngaa.com': '127.0.0.1', 'cache1-sha1.steamcontent.com': '127.0.0.1', 'peer.tail.ts.net': '127.0.0.1', 'proxy.example': '127.0.0.1', 'direct.example': '127.0.0.1'}}
+        routing = {'rules': ['DOMAIN,stun.ads.localhost,REJECT', 'DOMAIN-SUFFIX,ts.net,DIRECT', 'DOMAIN,dl.steam.clngaa.com,DIRECT', 'DOMAIN-SUFFIX,steamcontent.com,DIRECT', 'DOMAIN-SUFFIX,steampowered.com,PROXY', 'DOMAIN,proxy.example,PROXY', 'DOMAIN-SUFFIX,example,DIRECT', 'MATCH,PROXY']} if mode else {'rules': ['MATCH,DIRECT']}
         config = merge_config(base, routing) if mode else dict(base, rules=routing['rules'])
         # Exercise real routing without changing the machine's tunnel/DNS settings.
         config['tun'] = {'enable': False}
@@ -165,7 +172,7 @@ def run_case(binary, core, mode, supported, work, proxy, direct_tcp, direct_udp,
              'settings': {'udp': True, 'auth': 'noauth'}}]}
         config = merge_subscription(base, overlay) if mode else dict(base,
             outbounds=base['outbounds'] + [{'tag': 'direct', 'protocol': 'freedom'}, {'tag': 'block', 'protocol': 'blackhole'}], routing=overlay['routing'])
-        config['dns'] = {'hosts': {'dl.steam.clngaa.com': '127.0.0.1', 'cache1-sha1.steamcontent.com': '127.0.0.1', 'peer.tail.ts.net': '127.0.0.1'}}
+        config['dns'] = {'hosts': {'dl.steam.clngaa.com': '127.0.0.1', 'cache1-sha1.steamcontent.com': '127.0.0.1', 'peer.tail.ts.net': '127.0.0.1', 'proxy.example': '127.0.0.1', 'direct.example': '127.0.0.1'}}
         if mode:
             next(o for o in config['outbounds'] if o['tag']=='direct')['settings'] = {'domainStrategy': 'UseIPv4'}
         path = work / 'config.json'
@@ -234,6 +241,15 @@ def run_case(binary, core, mode, supported, work, proxy, direct_tcp, direct_udp,
                 assert send_udp(port, target_udp, 'peer.tail.ts.net'), 'Tailnet UDP was not direct'
                 assert before_proxy == (proxy.hits, proxy_hits[0]), 'Tailnet traffic reached public proxy'
                 assert direct_tcp.hits > before_direct[0] and direct_hits[0] > before_direct[1]
+            if mode:
+                before_proxy = (proxy.hits, proxy_hits[0])
+                assert send_tcp(port, target_tcp, 'direct.example')
+                assert send_udp(port, target_udp, 'direct.example')
+                assert before_proxy == (proxy.hits, proxy_hits[0]), 'DIRECT rule was lost'
+                before_direct = direct_hits[0]
+                received = send_udp(port, target_udp, 'proxy.example')
+                assert received == supported
+                assert before_direct == direct_hits[0], 'Proxy UDP fell into later DIRECT'
             if mode and supported:
                 before_proxy_tcp = proxy.hits
                 send_tcp(port, 80, 'dl.steam.clngaa.com')
@@ -243,10 +259,10 @@ def run_case(binary, core, mode, supported, work, proxy, direct_tcp, direct_udp,
                 trace = logpath.read_text()
                 expected = 'dial DIRECT' if core == 'mihomo' else 'taking detour [direct]'
                 assert expected in trace, 'No core evidence of Steam download direct route: ' + trace
-                assert send_tcp(port, target_tcp, 'dl.steam.clngaa.com'), 'Non-HTTP CDN port must use proxy'
-                assert send_udp(port, target_udp, 'dl.steam.clngaa.com'), 'CDN UDP must use proxy'
+                assert send_tcp(port, target_tcp, 'dl.steam.clngaa.com'), 'CDN TCP direct failed'
+                assert send_udp(port, target_udp, 'dl.steam.clngaa.com'), 'CDN UDP direct failed'
                 assert send_tcp(port, 80, 'store.steampowered.com'), 'Steam store must use proxy'
-                assert proxy.hits >= before_proxy_tcp + 2
+                assert proxy.hits == before_proxy_tcp + 1
             print(f'PASS {core} mode={mode or "off"} proxy={"UDP-capable" if supported else "UDP-unsupported/down"}', flush=True)
         except Exception:
             print(logpath.read_text(), file=sys.stderr)
