@@ -37,36 +37,36 @@ DNS 使用 fake-IP，默认查询为指定代理上的加密 DoH，直连目标�
 
 主 YAML 已包含 DNS/TUN 和防护规则，不再需要额外的 DNS 或防护模板。手动合并时必须同时保留所有字段和 `providers` 引用，建议使用脚本。
 
-## FlClash Extend 脚本
+## Clash Extend 脚本
 
-FlClash 的每个配置都有**扩展（Extend）**，其中“脚本”模式会用一段 JavaScript 改写整个配置。`Leora-FlClash-Extend.js` 由 `build_flclash.py` 从同一份 `Leora-Clash-Routing.yaml` 生成：保留订阅的节点、策略组和 `proxy-providers`，把规则、`rule-providers`、DNS、TUN、hosts、`mode`、`ipv6` 替换为 Leora 集合，追加 `leora-dns-out` DNS 出站，并自动把规则目标指向订阅里可核验的策略组；必要时新建 `Leora-Proxy` 选择组。
+Clash 的每个配置都有**扩展（Extend）**，其中“脚本”模式会用一段 JavaScript 改写整个配置。`Leora-Clash-Extend.js` 由 `build_clash.py` 从同一份 `Leora-Clash-Routing.yaml` 生成：保留订阅的节点、策略组和 `proxy-providers`，把规则、`rule-providers`、DNS、TUN、hosts、`mode`、`ipv6` 替换为 Leora 集合，追加 `leora-dns-out` DNS 出站，并自动把规则目标指向订阅里可核验的策略组；必要时新建 `Leora-Proxy` 选择组。
 
 ### 导入与绑定
 
-1. FlClash → **工具 → 进阶配置 → 脚本** → 右上角添加 → **从 URL 导入** 或 **从文件导入**：
-   - URL：`https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/Leora-FlClash-Extend.js`
-   - 文件：仓库中的 `Leora-FlClash-Extend.js`
+1. Clash → **工具 → 进阶配置 → 脚本** → 右上角添加 → **从 URL 导入** 或 **从文件导入**：
+   - URL：`https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/Leora-Clash-Extend.js`
+   - 文件：仓库中的 `Leora-Clash-Extend.js`
 2. **配置** → 目标配置右侧菜单 → **扩展（Extend）** → 扩展模式选 **脚本** → 选中刚导入的脚本。
-3. 退出扩展页后 FlClash 会自动重新应用；可在配置菜单的 **预览** 中确认规则、DNS 和 `leora-dns-out` 已出现。
+3. 退出扩展页后 Clash 会自动重新应用；可在配置菜单的 **预览** 中确认规则、DNS 和 `leora-dns-out` 已出现。
 4. 刷新订阅不会覆盖脚本；脚本会在每次应用配置时重新执行。
 
 ### 脚本做了什么
 
 - 规则序列与 `Leora-Clash-Routing.yaml` 逐条一致：本地/校园/Tailscale 直连、DNS 接管、STUN/DoT 拦截、广告拒绝、Steam 下载直连、完整来源顺序和每条代理规则后的 UDP 拒绝兜底；`MATCH` 和 `#PROXY` 会替换为实际目标。当规则目标能在静态节点/策略组上核验时，输出与 `merge_mihomo.py` 的结果相同；节点或 provider 订阅由脚本自建目标，`merge_mihomo` 无法校验该目标，但规则内容与兜底仍相同。
 - 自动选择规则目标：优先 `PROXY`、`节点选择`、`手动选择` 等命名策略组，其次任一可静态核验到真实节点的策略组，再退到带 provider 来源（`use`/`include-all`/`include-all-proxies`）且静态成员可核验的动态组；都没有时用全部真实节点创建 `Leora-Proxy` 选择组。若订阅既没有可用真实节点、也没有非空 `proxy-providers`，脚本会直接报错而不是落入直连；只有 provider 时用它们创建 `Leora-Proxy`。
-- `rule-providers` 按名称合并：订阅自有 provider 保留，Leora provider 覆盖同名项；`proxy-providers` 原样保留。FlClash 会把 provider 的 `path` 重写到自己的目录，无需手工处理。
+- `rule-providers` 按名称合并：订阅自有 provider 保留，Leora provider 覆盖同名项；`proxy-providers` 原样保留。Clash 会把 provider 的 `path` 重写到自己的目录，无需手工处理。
 - 若订阅已有名为 `leora-dns-out` 且类型不是 `dns` 的节点，脚本会报错；若同名节点本来就是 `type: dns`，会被去重后重新追加，不报错。
-- 固定残余差异：FlClash 会额外写入 `tun.device: FlClash`、重写 provider `path`、在订阅缺少时注入空的 `proxy-providers: {}`，并强制写入端口、`log-level`、`global-ua`、`profile.store-selected` 等应用级键；因此最终配置文本不可能与 YAML 逐字相同。
+- 固定残余差异：Clash 会额外写入 `tun.device: Clash`、重写 provider `path`、在订阅缺少时注入空的 `proxy-providers: {}`，并强制写入端口、`log-level`、`global-ua`、`profile.store-selected` 等应用级键；因此最终配置文本不可能与 YAML 逐字相同。
 
-### 必须手动对齐的 FlClash 应用级设置
+### 必须手动对齐的 Clash 应用级设置
 
-脚本无法控制以下字段：FlClash 在脚本执行后一定会覆盖或合并它们。要让最终**路由相关字段**与 `Leora-Clash-Routing.yaml` 一致，请逐项设置：
+脚本无法控制以下字段：Clash 在脚本执行后一定会覆盖或合并它们。要让最终**路由相关字段**与 `Leora-Clash-Routing.yaml` 一致，请逐项设置：
 
-| 项目 | FlClash 位置 | 目标值 | 说明 |
+| 项目 | Clash 位置 | 目标值 | 说明 |
 | --- | --- | --- | --- |
-| 出站模式 | 仪表盘 | **规则** | FlClash 用应用级 `mode` 覆盖脚本；该值本来就应保持规则模式 |
+| 出站模式 | 仪表盘 | **规则** | Clash 用应用级 `mode` 覆盖脚本；该值本来就应保持规则模式 |
 | IPv6 | 工具 → 常规 → 内核 | **关闭** | 覆盖脚本的 `ipv6: false`；Android 在进阶配置 → 网络 → VPN 中关闭 IPv6 |
-| TUN | 仪表盘/网络设置 | **开启**，协议栈 **mixed** | `enable`/`stack` 来自应用设置；`device` 恒为 FlClash，`auto-route`/`auto-detect-interface` 被强制为 true |
+| TUN | 仪表盘/网络设置 | **开启**，协议栈 **mixed** | `enable`/`stack` 来自应用设置；`device` 恒为 Clash，`auto-route`/`auto-detect-interface` 被强制为 true |
 | 严格路由 | TUN 设置（若提供） | **开启** | 脚本里的 `strict-route: true` 会保留；不要新增 `strict-route` 覆盖项，其默认值 false 会把 true 覆盖掉 |
 | 绕过私有地址 | 进阶配置 → 网络 → 虚拟网卡 | **关闭** | 默认开启会向 `route-exclude-address` 追加 `0.0.0.0/8`、`224.0.0.0/4`、`fc00::/7` 等，超出项目清单 |
 | 追加系统 DNS | 工具 → 常规 → 内核 | **关闭** | 开启会在 `nameserver` 末尾加入 `system://`，破坏“无系统 DNS 回退”；不要与其他网络设置里的“自动设置系统 DNS”混淆 |
@@ -74,20 +74,20 @@ FlClash 的每个配置都有**扩展（Extend）**，其中“脚本”模式�
 | TUN 覆盖项 | 进阶配置 → 网络 → 虚拟网卡 | 只可选加 `dns-hijack` | 这是应用级设置，会影响所有配置。除为对齐 `dns-hijack` 外不要添加其他键 |
 | 附加规则 | 扩展 → 标准模式 | 不适用 | 脚本模式不加载标准模式的附加规则，也无需关闭它们 |
 
-`dns-hijack` 有一处固定差异：FlClash 强制写成 `['any:53']`（仅 UDP），项目同时写 `tcp://any:53`。TCP 53 仍会被首条 `DST-PORT,53,leora-dns-out` 规则接管，因此行为一致；若要求配置文本也完全一致，可在桌面端的 **进阶配置 → 网络 → 虚拟网卡 → TUN 覆盖项** 添加 `dns-hijack`，值为 `any:53`、`tcp://any:53`。系统代理、端口、允许局域网、外部控制器等由 FlClash 管理的字段不属于路由规则，保持客户端设置即可。
+`dns-hijack` 有一处固定差异：Clash 强制写成 `['any:53']`（仅 UDP），项目同时写 `tcp://any:53`。TCP 53 仍会被首条 `DST-PORT,53,leora-dns-out` 规则接管，因此行为一致；若要求配置文本也完全一致，可在桌面端的 **进阶配置 → 网络 → 虚拟网卡 → TUN 覆盖项** 添加 `dns-hijack`，值为 `any:53`、`tcp://any:53`。系统代理、端口、允许局域网、外部控制器等由 Clash 管理的字段不属于路由规则，保持客户端设置即可。
 
-因此，“完全一致”指 `rules`、`rule-providers`、DNS、hosts、`mode`、`ipv6` 以及 TUN 中除 `device` 外的项目字段语义一致（订阅自带 provider 时 `rule-providers` 是并集，Leora 同名项覆盖）；FlClash 必然写入的 `tun.device`、provider `path`、端口/日志/`global-ua` 等应用级键属于固定残余差异。脚本里的 `mode`、`ipv6`、`tun.enable`、`tun.stack`、`tun.dns-hijack` 只是兜底值，FlClash 应用后会用上面的应用级设置覆盖；不要依赖脚本单独改变这些开关。验证时打开配置菜单的 **预览**：脚本模式下预览内容就是最终交给核心的完整配置，可直接核对规则、DNS、TUN 和代理目标。
+因此，“完全一致”指 `rules`、`rule-providers`、DNS、hosts、`mode`、`ipv6` 以及 TUN 中除 `device` 外的项目字段语义一致（订阅自带 provider 时 `rule-providers` 是并集，Leora 同名项覆盖）；Clash 必然写入的 `tun.device`、provider `path`、端口/日志/`global-ua` 等应用级键属于固定残余差异。脚本里的 `mode`、`ipv6`、`tun.enable`、`tun.stack`、`tun.dns-hijack` 只是兜底值，Clash 应用后会用上面的应用级设置覆盖；不要依赖脚本单独改变这些开关。验证时打开配置菜单的 **预览**：脚本模式下预览内容就是最终交给核心的完整配置，可直接核对规则、DNS、TUN 和代理目标。
 
 ### 更新与校验
 
 ```bash
 python3 -m pip install -r requirements.txt
-python3 build_flclash.py            # 重新生成 Leora-FlClash-Extend.js
-python3 build_flclash.py --check    # 生成物与当前路由不一致时失败
+python3 build_clash.py            # 重新生成 Leora-Clash-Extend.js
+python3 build_clash.py --check    # 生成物与当前路由不一致时失败
 python3 -m unittest discover -s tests -v
 ```
 
-`tests/test_flclash.py` 用 Node 近似 FlClash 的 QuickJS `main(config)` 契约（V8 而非 QuickJS，只覆盖脚本使用的语言子集）执行脚本：静态订阅与 `merge_config` 做整字典比较，节点/provider 订阅校验完整规则序列、目标、provider 合并、幂等和报错路径。修改 `Leora-ProxyRules.conf` 或 Clash 路由后，GitHub Actions 会同时刷新 YAML 与脚本；CI 在重新生成前先运行 `build_flclash.py --check`，提交了过期脚本会失败。
+`tests/test_clash_extend.py` 用 Node 近似 Clash 的 QuickJS `main(config)` 契约（V8 而非 QuickJS，只覆盖脚本使用的语言子集）执行脚本：静态订阅与 `merge_config` 做整字典比较，节点/provider 订阅校验完整规则序列、目标、provider 合并、幂等和报错路径。修改 `Leora-ProxyRules.conf` 或 Clash 路由后，GitHub Actions 会同时刷新 YAML 与脚本；CI 在重新生成前先运行 `build_clash.py --check`，提交了过期脚本会失败。
 
 ## Xray
 

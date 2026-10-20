@@ -10,12 +10,12 @@ import unittest
 
 import yaml
 
-import build_flclash
+import build_clash
 from merge_mihomo import merge_config
 from routing_policy import mihomo_settings, protected_mihomo
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / 'Leora-FlClash-Extend.js'
+SCRIPT = ROOT / 'Leora-Clash-Extend.js'
 NODE = shutil.which('node')
 
 
@@ -64,7 +64,7 @@ def remap_rule(rule, target):
 
 def run_script(config):
     if NODE is None:
-        raise unittest.SkipTest('node is required to execute the FlClash script')
+        raise unittest.SkipTest('node is required to execute the Clash script')
     with tempfile.TemporaryDirectory() as temp:
         temp = pathlib.Path(temp)
         config_file = temp / 'config.json'
@@ -90,7 +90,7 @@ def run_script(config):
 
 def eval_artifact(expression):
     if NODE is None:
-        raise unittest.SkipTest('node is required to evaluate the FlClash script')
+        raise unittest.SkipTest('node is required to evaluate the Clash script')
     with tempfile.TemporaryDirectory() as temp:
         temp = pathlib.Path(temp)
         output_file = temp / 'value.json'
@@ -115,7 +115,7 @@ class ArtifactTests(unittest.TestCase):
     def test_checked_in_script_is_generated_from_current_routing(self):
         routing = yaml.safe_load(
             (ROOT / 'Leora-Clash-Routing.yaml').read_text(encoding='utf-8'))
-        self.assertEqual(build_flclash.build_script(routing),
+        self.assertEqual(build_clash.build_script(routing),
                          SCRIPT.read_text(encoding='utf-8'))
 
     def test_embedded_routing_equals_canonical_sources(self):
@@ -145,7 +145,7 @@ class ArtifactTests(unittest.TestCase):
 class CliTests(unittest.TestCase):
     def test_check_accepts_the_current_artifact(self):
         completed = subprocess.run(
-            [sys.executable, str(ROOT / 'build_flclash.py'), '--check'],
+            [sys.executable, str(ROOT / 'build_clash.py'), '--check'],
             cwd=ROOT, capture_output=True, text=True, encoding='utf-8',
             env={**os.environ, 'PYTHONUTF8': '1'}, timeout=60,
         )
@@ -156,7 +156,7 @@ class CliTests(unittest.TestCase):
             temp = pathlib.Path(temp)
             missing = temp / 'missing.js'
             completed = subprocess.run(
-                [sys.executable, str(ROOT / 'build_flclash.py'), '--check',
+                [sys.executable, str(ROOT / 'build_clash.py'), '--check',
                  '--output', str(missing)],
                 cwd=ROOT, capture_output=True, text=True, encoding='utf-8',
                 env={**os.environ, 'PYTHONUTF8': '1'}, timeout=60,
@@ -166,7 +166,7 @@ class CliTests(unittest.TestCase):
             stale.write_text(SCRIPT.read_text(encoding='utf-8') + '\n',
                              encoding='utf-8')
             completed = subprocess.run(
-                [sys.executable, str(ROOT / 'build_flclash.py'), '--check',
+                [sys.executable, str(ROOT / 'build_clash.py'), '--check',
                  '--output', str(stale)],
                 cwd=ROOT, capture_output=True, text=True, encoding='utf-8',
                 env={**os.environ, 'PYTHONUTF8': '1'}, timeout=60,
@@ -174,7 +174,7 @@ class CliTests(unittest.TestCase):
             self.assertEqual(completed.returncode, 1)
 
 
-class FlClashScriptTests(unittest.TestCase):
+class ClashScriptTests(unittest.TestCase):
     def setUp(self):
         self.routing = yaml.safe_load(
             (ROOT / 'Leora-Clash-Routing.yaml').read_text(encoding='utf-8'))
@@ -351,12 +351,12 @@ class FlClashScriptTests(unittest.TestCase):
         actual = run_script(copy.deepcopy(payload))
         self.assertEqual(actual, expected)
 
-    def test_documented_flclash_settings_keep_canonical_fields(self):
+    def test_documented_clash_settings_keep_canonical_fields(self):
         target = '🚀 节点选择'
         actual = run_script(subscription())
-        # FlClash overwrites these after the script; a user matching the
+        # Clash overwrites these after the script; a user matching the
         # documented settings (rule mode, IPv6 off, TUN mixed, bypass private
-        # off) gets the canonical rules, DNS and hosts. FlClash's real default
+        # off) gets the canonical rules, DNS and hosts. Clash's real default
         # bypassPrivateRoute=true would append private ranges, which is why the
         # checklist requires turning it off.
         final = copy.deepcopy(actual)
@@ -364,7 +364,7 @@ class FlClashScriptTests(unittest.TestCase):
         final['ipv6'] = False
         final['tun'].update({
             'enable': True,
-            'device': 'FlClash',
+            'device': 'Clash',
             'stack': 'mixed',
             'auto-route': True,
             'dns-hijack': ['any:53'],
