@@ -42,12 +42,15 @@ def parse(text,domain_set=False):
         k={'HOST':'DOMAIN','HOST-SUFFIX':'DOMAIN-SUFFIX','HOST-KEYWORD':'DOMAIN-KEYWORD','HOST-WILDCARD':'DOMAIN-WILDCARD','IP6-CIDR':'IP-CIDR6'}.get(a[0],a[0])
         if k in ('USER-AGENT','URL-REGEX'):
             skipped.append(line);continue
-        if k not in ('DOMAIN','DOMAIN-SUFFIX','DOMAIN-KEYWORD','DOMAIN-WILDCARD','DOMAIN-REGEX','IP-CIDR','IP-CIDR6','IP-ASN'):
+        if k not in ('DOMAIN','DOMAIN-SUFFIX','DOMAIN-KEYWORD','DOMAIN-WILDCARD','DOMAIN-REGEX','IP-CIDR','IP-CIDR6','IP-ASN','GEOIP'):
             raise ValueError('Unsupported rule: '+line)
         if len(a)<2:raise ValueError(line)
         value=a[1]
         if k in ('IP-CIDR','IP-CIDR6'):value=str(ipaddress.ip_network(value,strict=False))
         if k=='IP-ASN':int(value)
+        if k=='GEOIP':
+            value=value.upper()
+            if not re.fullmatch('[A-Z]{2}',value):raise ValueError('Invalid GEOIP country: '+line)
         out.append((k,value,'no-resolve' in a[2:]))
     return list(dict.fromkeys(out)),skipped
 
@@ -105,6 +108,7 @@ def run():
         for k,v,nr in rules:
             if k=='IP-ASN':key,vals='ip',as_prefix[int(v)]
             elif k in ('IP-CIDR','IP-CIDR6'):key,vals='ip',[v]
+            elif k=='GEOIP':key,vals='ip',['geoip:'+v.lower()]
             else:
                 key='domain'
                 vals=[{'DOMAIN':'full:','DOMAIN-SUFFIX':'domain:','DOMAIN-KEYWORD':'','DOMAIN-REGEX':'regexp:','DOMAIN-WILDCARD':'regexp:'}[k]+(wildcard_regex(v) if k=='DOMAIN-WILDCARD' else v)]
@@ -180,7 +184,7 @@ def run():
     used={v['url'].split('/providers/')[-1] for v in providers.values() if '/providers/' in v['url']}
     for stale in (P/'providers').glob('leora-*.yaml'):
         if stale.name not in used:stale.unlink()
-    dump('conversion-report.json',{'generated_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'source':SOURCE,'base':ARGS.base,'source_sha256':hashlib.sha256(conf.encode()).hexdigest(),'policy':'Full portable Shadowrocket rules in source order with local bypass, DNS interception and targeted STUN guards', 'general_settings':basic_settings_audit(),'privacy':{'public_dns':public_dns(),'bootstrap_dns':BOOTSTRAP_DOH,'stun_ports':list(STUN_PORTS),'native_stun_spoof':False,'browser_webrtc_restriction_required':True},'providers':conversions,'asn_sources':as_urls,'asn_prefix_counts':{n:len(v) for n,v in as_prefix.items()},'xray_rules':len(xr),'upstream_provider_count':sum(not r['url'].startswith(ARGS.base.rstrip('/')+'/providers/') for r in providers.values())})
+    dump('conversion-report.json',{'generated_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'source':SOURCE,'base':ARGS.base,'source_sha256':hashlib.sha256(conf.encode()).hexdigest(),'policy':'Full portable Shadowrocket rules in source order with local bypass, DNS interception, global STUN guards and a trailing GEOIP CN direct fallback for unmatched domestic IPs', 'general_settings':basic_settings_audit(),'privacy':{'public_dns':public_dns(),'bootstrap_dns':BOOTSTRAP_DOH,'stun_ports':list(STUN_PORTS),'native_stun_spoof':False,'browser_webrtc_restriction_required':True},'providers':conversions,'asn_sources':as_urls,'asn_prefix_counts':{n:len(v) for n,v in as_prefix.items()},'xray_rules':len(xr),'upstream_provider_count':sum(not r['url'].startswith(ARGS.base.rstrip('/')+'/providers/') for r in providers.values())})
     print(json.dumps({'providers':len(providers),'upstream_links':sum(not r['url'].startswith(ARGS.base.rstrip('/')+'/providers/') for r in providers.values()),'converted_providers':sum(r['url'].startswith(ARGS.base.rstrip('/')+'/providers/') for r in providers.values()),'xray_rules':len(xr),'unsupported_count':sum(len(r['unsupported']) for r in conversions)}))
 
 if __name__=='__main__':

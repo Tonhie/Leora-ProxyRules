@@ -3,7 +3,9 @@
 import argparse
 import hashlib
 import json
+import os
 import pathlib
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -33,12 +35,18 @@ def main():
             provider.update(type='file',path=str(path))
             provider.pop('url',None)
         path=work/'full.yaml';path.write_text(yaml.safe_dump(c))
+        geoip=pathlib.Path(args.xray).resolve().parent/'geoip.dat'
+        if geoip.exists():
+            shutil.copyfile(geoip, work/'geoip.dat')
         subprocess.run([args.mihomo,'-t','-d',str(work),'-f',str(path)],check=True)
         x=merge_subscription({'outbounds':[{'tag':'proxy','protocol':'socks',
             'settings':{'servers':[{'address':'127.0.0.1','port':9}]}}]},
             json.loads((ROOT/'Leora-Xray-Routing.json').read_text()))
         path=work/'full.json';path.write_text(json.dumps(x))
-        subprocess.run([args.xray,'run','-test','-c',str(path)],check=True)
+        env=dict(os.environ)
+        if geoip.exists():
+            env['XRAY_LOCATION_ASSET']=str(geoip.parent)
+        subprocess.run([args.xray,'run','-test','-c',str(path)],check=True,env=env)
         print('PASS complete generated Mihomo and Xray profiles')
 
 

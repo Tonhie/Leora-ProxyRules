@@ -25,8 +25,10 @@ def main():
     path=dest/'mihomo';path.write_bytes(gzip.decompress(mihomo));path.chmod(0o755)
     xray=fetch('https://github.com/XTLS/Xray-core/releases/download/v26.3.27/Xray-linux-64.zip',
                '23cd9af937744d97776ee35ecad4972cf4b2109d1e0fe6be9930467608f7c8ae')
-    # Extract only the executable. These tests need no geo databases.
-    path=dest/'xray';path.write_bytes(zipfile.ZipFile(io.BytesIO(xray)).read('xray'));path.chmod(0o755)
+    # The GEOIP,CN fallback needs geoip.dat; Xray ships the canonical copy.
+    archive=zipfile.ZipFile(io.BytesIO(xray))
+    path=dest/'xray';path.write_bytes(archive.read('xray'));path.chmod(0o755)
+    (dest/'geoip.dat').write_bytes(archive.read('geoip.dat'))
     print('Verified Mihomo 1.19.32 and Xray 26.3.27 release checksums')
 
 

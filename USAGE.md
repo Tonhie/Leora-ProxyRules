@@ -7,11 +7,11 @@ Mihomo/Xray 通过“代理连接，代理不可用时失败”降低真实公�
 只有防护配置，没有普通版或模式开关。
 
 - Shadowrocket：使用 `Leora-ProxyRules.conf`，启用 STUN 应答伪装、UDP 不支持时拒绝，并保留原有其他分流。
-- Mihomo/Xray：内部 DNS 接管 → 原本地/校园/Tailscale 绕过 → 隐私防护 → Shadowrocket 完整可转换分流顺序。国内/B站/Apple 等继续按源规则直连；Steam 下载直连、商店/社区代理。
-- 隐私防护：拒绝 TCP/UDP `3478`、`5349`、`19302–19309`，以及名称中独立的 `stun`/`stun数字`/`turn`/`turn数字`/`turns` 服务标签；拒绝外部 TCP/UDP `853`，避免应用绕过配置的 DNS 使用 DoT/DoQ。这些规则影响相应语音、会议、游戏及 Tailscale 公网发现，校园/尾网已识别的本地目标优先绕过。
-- Mihomo 在每条 PROXY 规则后保留同条件 UDP 拒绝兜底，节点不支持 UDP 时不落入后面的 DIRECT。Xray 代理出口失败后不会重新匹配直连规则。
+- Mihomo/Xray：内部 DNS 接管 → 原本地/校园/Tailscale 绕过 → 隐私防护 → Shadowrocket 完整可转换分流顺序 → 国内 IP 兜底直连。国内/B站/Apple 等继续按源规则直连；Steam 下载直连、商店/社区代理。所有代理规则之后、`MATCH` 之前增加 `GEOIP,CN,DIRECT`，只兜底未被显式列表覆盖的国内 IP（游戏、QUIC/CDN 等），不抢在代理规则前面。
+- 隐私防护：拒绝 TCP/UDP `3478`、`5349`、`19302–19309`，以及名称中独立的 `stun`/`stun数字`/`turn`/`turn数字`/`turns` 服务标签；拒绝外部 TCP/UDP `853`，避免应用绕过配置的 DNS 使用 DoT/DoQ。这些规则影响相应语音、会议、游戏及 Tailscale 公网发现，校园/尾网已识别的本地目标优先绕过。**这些防护仍放在所有国内直连之前并全局生效**：境外网页可以使用国内 IP 的 STUN/TURN 获取真实公网 IP，不能因为目标在 CN 就放行。
+- Mihomo 在每条 PROXY 规则后保留同条件 UDP 拒绝兜底，节点不支持 UDP 时不落入后面的 DIRECT。Xray 代理出口失败后不会重新匹配直连规则。末尾的 `GEOIP,CN,DIRECT` 位于全部代理规则之后，不会让本应代理的流量提前直连；代理规则后的 UDP 兜底仍只作用于代理命中项。
 - **WebRTC 部署必须配合下文浏览器限制。** 端口/域名拦截无法识别任意端口或普通域名上的 STUN，也不能阻止全部 ICE 本地信息。完整保留 DIRECT 时，核心配置不能提供 Shadowrocket STUN 伪装的相同效果。不要把修改后的配置理解为“所有设备绝对不泄漏”。
-- 转换边界：USER-AGENT/URL-REGEX 不可直接转换，记录在 `conversion-report.json`；Xray ASN 使用 RIPE 公告网段快照，`IPOnDemand` 无法逐条模拟 Shadowrocket `no-resolve`。隐私规则是有意加入的优先覆盖，普通分流的来源、动作和相对顺序保持同步。
+- 转换边界：USER-AGENT/URL-REGEX 不可直接转换，记录在 `conversion-report.json`；Xray ASN 使用 RIPE 公告网段快照，`IPOnDemand` 无法逐条模拟 Shadowrocket `no-resolve`；`GEOIP,CN` 在 Mihomo 使用 GeoIP 数据库，在 Xray 转换为 `geoip:cn`（测试需要 `geoip.dat`）。隐私规则是有意加入的优先覆盖，普通分流的来源、动作和相对顺序保持同步。
 - 下载区域须在 Steam 客户端选择中国大陆；规则不能控制 Steam 实际选择哪个 CDN，未知下载域名仍走代理。依据 [SteamCN](https://github.com/blackmatrix7/ios_rule_script/blob/master/rule/Shadowrocket/SteamCN/SteamCN.list) 和 [Steam](https://github.com/blackmatrix7/ios_rule_script/blob/master/rule/Shadowrocket/Steam/Steam.list) 列表筛选下载端点，排除商店、社区和其他宽泛的 SteamCN 直连范围。
 
 广告规则只能拦截覆盖范围内的广告。代理规则须由支持 UDP 的节点转发 UDP，否则拒绝；直连规则保持直连。STUN 伪装可能影响 Tailscale 公网点对点发现，实际打洞仍需设备验证。客户端退出后的持续阻断需要系统或客户端 kill switch。
@@ -53,6 +53,7 @@ Clash 的每个配置都有**扩展（Extend）**，其中“脚本”模式会�
 ### 脚本做了什么
 
 - 规则序列与 `Leora-Clash-Routing.yaml` 逐条一致：本地/校园/Tailscale 直连、DNS 接管、STUN/DoT 拦截、广告拒绝、Steam 下载直连、完整来源顺序和每条代理规则后的 UDP 拒绝兜底；`MATCH` 和 `#PROXY` 会替换为实际目标。当规则目标能在静态节点/策略组上核验时，输出与 `merge_mihomo.py` 的结果相同；节点或 provider 订阅由脚本自建目标，`merge_mihomo` 无法校验该目标，但规则内容与兜底仍相同。
+- 末尾在 `MATCH` 之前保留 `GEOIP,CN,DIRECT`，只兜底未被前面代理/直连规则命中的国内 IP（游戏 UDP、QUIC/CDN），不会抢在代理规则前。STUN/TURN/853 防护仍在所有国内直连之前全局生效：国内普通 UDP 恢复直连，但国内 STUN/DoT 仍被拦截，这是有意的安全边界，避免境外网页借国内 STUN 服务器获取真实公网 IP。
 - 自动选择规则目标：优先 `PROXY`、`节点选择`、`手动选择` 等命名策略组，其次任一可静态核验到真实节点的策略组，再退到带 provider 来源（`use`/`include-all`/`include-all-proxies`）且静态成员可核验的动态组；都没有时用全部真实节点创建 `Leora-Proxy` 选择组。若订阅既没有可用真实节点、也没有非空 `proxy-providers`，脚本会直接报错而不是落入直连；只有 provider 时用它们创建 `Leora-Proxy`。
 - `rule-providers` 按名称合并：订阅自有 provider 保留，Leora provider 覆盖同名项；`proxy-providers` 原样保留。Clash 会把 provider 的 `path` 重写到自己的目录，无需手工处理。
 - 若订阅已有名为 `leora-dns-out` 且类型不是 `dns` 的节点，脚本会报错；若同名节点本来就是 `type: dns`，会被去重后重新追加，不报错。

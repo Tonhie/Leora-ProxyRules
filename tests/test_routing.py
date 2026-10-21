@@ -78,6 +78,30 @@ class PolicyTests(unittest.TestCase):
             self.assertGreater(min(xi), last_x, line)
             last_m, last_x = max(indexes), max(xi)
 
+    def test_domestic_geoip_fallback_stays_after_proxy_and_keeps_guards_global(self):
+        m = yaml.safe_load((ROOT / 'Leora-Clash-Routing.yaml').read_text())
+        x = json.loads((ROOT / 'Leora-Xray-Routing.json').read_text())['routing']['rules']
+        rules = m['rules']
+        geo = rules.index('GEOIP,CN,DIRECT')
+        self.assertEqual(rules[-3:], ['GEOIP,CN,DIRECT', 'MATCH,PROXY', 'NETWORK,udp,REJECT'])
+        self.assertTrue(all(not rule.endswith(',PROXY') for rule in rules[geo + 1:-2]))
+        guards = [
+            'DST-PORT,3478/5349/19302-19309,REJECT',
+            'DOMAIN-REGEX,(^|[.-])(stun[0-9]*|turn[0-9]*|turns)([.-]|$),REJECT',
+            'DST-PORT,853,REJECT',
+        ]
+        china = rules.index('RULE-SET,leora-33-remote-0,DIRECT')
+        for guard in guards:
+            self.assertLess(rules.index(guard), china)
+            self.assertLess(rules.index(guard), geo)
+        xray_geo = next(i for i, r in enumerate(x) if r.get('ip') == ['geoip:cn'])
+        xray_guards = [i for i, r in enumerate(x)
+                       if r.get('ruleTag') in ('stun-ports', 'stun-domain', 'external-dot-deny')]
+        xray_final = next(i for i, r in enumerate(x) if r.get('ruleTag') == 'final-proxy')
+        self.assertEqual(len(xray_guards), 3)
+        self.assertTrue(all(index < xray_geo for index in xray_guards))
+        self.assertLess(xray_geo, xray_final)
+
     def test_shadowrocket_steam_overrides_precede_china_and_steam_proxy_list(self):
         text = (ROOT / 'Leora-ProxyRules.conf').read_text()
         china = text.index('China/China.list,DIRECT')
