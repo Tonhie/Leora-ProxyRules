@@ -25,7 +25,9 @@ class PolicyTests(unittest.TestCase):
     def test_mihomo_preserves_order_and_only_guards_proxy_matches(self):
         original = copy.deepcopy(self.m)
         result = merge_config(self.m, self.mrules)
-        self.assertEqual(result['rules'][4:], [
+        self.assertEqual(result['rules'][:2], [
+            'DST-PORT,53,leora-dns-out', 'DST-PORT,853,REJECT'])
+        self.assertEqual(result['rules'][2:], [
             'DOMAIN,ads.example,REJECT', 'DOMAIN,proxy.example,PROXY',
             'AND,((NETWORK,udp),(DOMAIN,proxy.example)),REJECT',
             'DOMAIN-SUFFIX,example,DIRECT', 'MATCH,PROXY', 'NETWORK,udp,REJECT'])
@@ -78,28 +80,20 @@ class PolicyTests(unittest.TestCase):
             self.assertGreater(min(xi), last_x, line)
             last_m, last_x = max(indexes), max(xi)
 
-    def test_domestic_geoip_fallback_stays_after_proxy_and_keeps_guards_global(self):
+    def test_domestic_geoip_fallback_stays_after_proxy_and_keeps_dot_guard_global(self):
         m = yaml.safe_load((ROOT / 'Leora-Clash-Routing.yaml').read_text())
         x = json.loads((ROOT / 'Leora-Xray-Routing.json').read_text())['routing']['rules']
         rules = m['rules']
         geo = rules.index('GEOIP,CN,DIRECT')
         self.assertEqual(rules[-3:], ['GEOIP,CN,DIRECT', 'MATCH,PROXY', 'NETWORK,udp,REJECT'])
         self.assertTrue(all(not rule.endswith(',PROXY') for rule in rules[geo + 1:-2]))
-        guards = [
-            'DST-PORT,3478/5349/19302-19309,REJECT',
-            'DOMAIN-REGEX,(^|[.-])(stun[0-9]*|turn[0-9]*|turns)([.-]|$),REJECT',
-            'DST-PORT,853,REJECT',
-        ]
-        china = rules.index('RULE-SET,leora-33-remote-0,DIRECT')
-        for guard in guards:
-            self.assertLess(rules.index(guard), china)
-            self.assertLess(rules.index(guard), geo)
+        china = rules.index('DOMAIN-SUFFIX,tonhie.online,DIRECT')
+        self.assertLess(rules.index('DST-PORT,853,REJECT'), china)
+        self.assertLess(rules.index('DST-PORT,853,REJECT'), geo)
         xray_geo = next(i for i, r in enumerate(x) if r.get('ip') == ['geoip:cn'])
-        xray_guards = [i for i, r in enumerate(x)
-                       if r.get('ruleTag') in ('stun-ports', 'stun-domain', 'external-dot-deny')]
         xray_final = next(i for i, r in enumerate(x) if r.get('ruleTag') == 'final-proxy')
-        self.assertEqual(len(xray_guards), 3)
-        self.assertTrue(all(index < xray_geo for index in xray_guards))
+        xray_dot = next(i for i, r in enumerate(x) if r.get('ruleTag') == 'external-dot-deny')
+        self.assertLess(xray_dot, xray_geo)
         self.assertLess(xray_geo, xray_final)
 
     def test_shadowrocket_steam_overrides_precede_china_and_steam_proxy_list(self):
@@ -113,7 +107,7 @@ class PolicyTests(unittest.TestCase):
         self.assertIn('Steam/Steam.list,PROXY', text)
         self.assertNotIn('Steam/Steam.list,DIRECT', text)
         self.assertNotIn('SteamCN/SteamCN.list,DIRECT', text)
-        self.assertIn('stun-response-ip = 127.0.0.1', text)
+        self.assertNotIn('stun-response-ip', text)
         self.assertIn('udp-policy-not-supported-behaviour = REJECT', text)
 
     def test_published_entries_are_already_protected(self):
@@ -239,23 +233,27 @@ class PolicyTests(unittest.TestCase):
         self.x['inbounds'] = [{'tag': BOOTSTRAP_TAG}]
         with self.assertRaises(ValueError):merge_subscription(self.x,self.xr)
 
-    def test_stun_and_dot_guards_precede_public_direct_and_preserve_local(self):
-        from routing_policy import split_dns, STUN_PORTS, STUN_DOMAIN
-        m=yaml.safe_load((ROOT/'Leora-Clash-Routing.yaml').read_text())
-        x=json.loads((ROOT/'Leora-Xray-Routing.json').read_text())['routing']['rules']
-        mi=m['rules'].index('DST-PORT,3478/5349/19302-19309,REJECT')
-        xi=next(i for i,r in enumerate(x) if r.get('ruleTag')=='stun-ports')
-        for d in split_dns():
-            self.assertLess(m['rules'].index('DOMAIN-SUFFIX,'+d+',DIRECT'),mi)
-            self.assertTrue(any('domain:'+d in r.get('domain',[]) for r in x[:xi]))
-        self.assertLess(mi,m['rules'].index('DOMAIN-SUFFIX,tonhie.online,DIRECT'))
-        self.assertLess(xi,next(i for i,r in enumerate(x) if 'domain:tonhie.online' in r.get('domain',[])))
-        rule=x[xi]
-        self.assertEqual(rule['port'],','.join(STUN_PORTS))
-        self.assertEqual(rule['outboundTag'],'block')
-        self.assertTrue(any(r.get('domain')==['regexp:'+STUN_DOMAIN] and r['outboundTag']=='block' for r in x))
-        self.assertIn('DST-PORT,853,REJECT',m['rules'])
-        self.assertTrue(any(r.get('port')=='853' and r.get('outboundTag')=='block' for r in x))
+    def test_direct_destinations_allow_stun_and_proxy_destinations_stay_closed(self):
+        from routing_policy import split_dns
+        m = yaml.safe_load((ROOT / 'Leora-Clash-Routing.yaml').read_text())
+        x = json.loads((ROOT / 'Leora-Xray-Routing.json').read_text())['routing']['rules']
+        rules = m['rules']
+        self.assertNotIn('DST-PORT,3478/5349/19302-19309,REJECT', rules)
+        self.assertFalse(any(rule.startswith('DOMAIN-REGEX,(^|[.-])(stun') for rule in rules))
+        self.assertTrue(any(r.get('ruleTag') == 'external-dot-deny' for r in x))
+        self.assertFalse(any(r.get('ruleTag') in ('stun-ports', 'stun-domain') for r in x))
+        self.assertIn('DOMAIN-SUFFIX,tailscale.com,DIRECT', rules)
+        self.assertIn('DOMAIN-SUFFIX,tailscale.io,DIRECT', rules)
+        self.assertIn('IP-CIDR,111.187.0.0/16,DIRECT,no-resolve', rules)
+        tailnet = rules.index('IP-CIDR,100.64.0.0/10,DIRECT,no-resolve')
+        for domain in split_dns():
+            self.assertLess(tailnet, rules.index('DOMAIN-SUFFIX,' + domain + ',DIRECT'))
+        # Proxy destinations still get an adjacent UDP reject; direct domains do not.
+        for index, rule in enumerate(rules):
+            if rule.endswith(',PROXY'):
+                self.assertTrue(rules[index + 1].startswith(('AND,((NETWORK,udp)', 'NETWORK,udp,REJECT')), rule)
+        self.assertLess(rules.index('DST-PORT,853,REJECT'),
+                        rules.index('DOMAIN-SUFFIX,tonhie.online,DIRECT'))
 
     def test_browser_templates_use_core_dns_and_restrict_webrtc(self):
         chrome=json.loads((ROOT/'browser/Chrome-policy.json').read_text())

@@ -1,20 +1,21 @@
 # WebRTC 防泄漏配置
 
-Mihomo/Xray 通过“代理连接，代理不可用时失败”降低真实公网 IP 泄漏风险；Shadowrocket 使用 STUN 应答伪装。防护只作用于**已进入代理核心的流量**；需要客户端 TUN/VPN 接管 IPv4，并在客户端或系统层阻断未接管的 IPv6。仅导入路由或打开系统 HTTP 代理不足以覆盖浏览器 UDP。
+Mihomo/Xray 通过“代理连接，代理不可用时失败”降低真实公网 IP 泄漏风险；STUN 现在跟随路由：直连目标放行，代理目标关闭。防护只作用于**已进入代理核心的流量**；需要客户端 TUN/VPN 接管 IPv4，并在客户端或系统层阻断未接管的 IPv6。仅导入路由或打开系统 HTTP 代理不足以覆盖浏览器 UDP。
 
 ## 默认策略
 
 只有防护配置，没有普通版或模式开关。
 
-- Shadowrocket：使用 `Leora-ProxyRules.conf`，启用 STUN 应答伪装、UDP 不支持时拒绝，并保留原有其他分流。
-- Mihomo/Xray：内部 DNS 接管 → 原本地/校园/Tailscale 绕过 → 隐私防护 → Shadowrocket 完整可转换分流顺序 → 国内 IP 兜底直连。国内/B站/Apple 等继续按源规则直连；Steam 下载直连、商店/社区代理。所有代理规则之后、`MATCH` 之前增加 `GEOIP,CN,DIRECT`，只兜底未被显式列表覆盖的国内 IP（游戏、QUIC/CDN 等），不抢在代理规则前面。
-- 隐私防护：拒绝 TCP/UDP `3478`、`5349`、`19302–19309`，以及名称中独立的 `stun`/`stun数字`/`turn`/`turn数字`/`turns` 服务标签；拒绝外部 TCP/UDP `853`，避免应用绕过配置的 DNS 使用 DoT/DoQ。这些规则影响相应语音、会议、游戏及 Tailscale 公网发现，校园/尾网已识别的本地目标优先绕过。**这些防护仍放在所有国内直连之前并全局生效**：境外网页可以使用国内 IP 的 STUN/TURN 获取真实公网 IP，不能因为目标在 CN 就放行。
+- Shadowrocket：使用 `Leora-ProxyRules.conf`，保留原有分流和 UDP 不支持时拒绝；不再伪造 STUN 响应，STUN 直连/代理行为跟随路由。
+- Mihomo/Xray：内部 DNS 接管 → 原本地/校园/Tailscale 绕过 → 隐私防护（DoT） → Shadowrocket 完整可转换分流顺序 → 国内 IP 兜底直连。国内/B站/Apple 等继续按源规则直连；Steam 下载直连、商店/社区代理。所有代理规则之后、`MATCH` 之前增加 `GEOIP,CN,DIRECT`，只兜底未被显式列表覆盖的国内 IP（游戏、QUIC/CDN 等），不抢在代理规则前面。
+- STUN/TURN：不再有全局端口/域名拒绝。STUN 服务按路由决定：直连目标允许，代理目标在同条件 UDP 拒绝兜底处关闭，未匹配 UDP 仍被最后一条 `NETWORK,udp,REJECT` 拒绝。因此国内/直连站点可以拿到真实映射，代理目标不会以真实 IP 直连。
+- 隐私防护：拒绝外部 TCP/UDP `853`，避免应用绕过配置的 DNS 使用 DoT/DoQ；该规则仍在所有国内直连之前全局生效。**STUN 放行会增加浏览器 WebRTC 暴露面**：恶意网页可以利用任意直连 STUN 服务器取得真实公网 IP；因此浏览器侧 WebRTC 限制仍是必须项，路由层不再假装能完全拦截 STUN。
 - Mihomo 在每条 PROXY 规则后保留同条件 UDP 拒绝兜底，节点不支持 UDP 时不落入后面的 DIRECT。Xray 代理出口失败后不会重新匹配直连规则。末尾的 `GEOIP,CN,DIRECT` 位于全部代理规则之后，不会让本应代理的流量提前直连；代理规则后的 UDP 兜底仍只作用于代理命中项。
-- **WebRTC 部署必须配合下文浏览器限制。** 端口/域名拦截无法识别任意端口或普通域名上的 STUN，也不能阻止全部 ICE 本地信息。完整保留 DIRECT 时，核心配置不能提供 Shadowrocket STUN 伪装的相同效果。不要把修改后的配置理解为“所有设备绝对不泄漏”。
+- **WebRTC 部署必须配合下文浏览器限制。** 现在 STUN 对直连目标开放，路由层不会拦截浏览器到直连 STUN 服务器的请求，也无法阻止全部 ICE 本地信息；只有浏览器限制才能避免把真实 IP 发给网页。不要把修改后的配置理解为“所有设备绝对不泄漏”。
 - 转换边界：USER-AGENT/URL-REGEX 不可直接转换，记录在 `conversion-report.json`；Xray ASN 使用 RIPE 公告网段快照，`IPOnDemand` 无法逐条模拟 Shadowrocket `no-resolve`；`GEOIP,CN` 在 Mihomo 使用 GeoIP 数据库，在 Xray 转换为 `geoip:cn`（测试需要 `geoip.dat`）。隐私规则是有意加入的优先覆盖，普通分流的来源、动作和相对顺序保持同步。
 - 下载区域须在 Steam 客户端选择中国大陆；规则不能控制 Steam 实际选择哪个 CDN，未知下载域名仍走代理。依据 [SteamCN](https://github.com/blackmatrix7/ios_rule_script/blob/master/rule/Shadowrocket/SteamCN/SteamCN.list) 和 [Steam](https://github.com/blackmatrix7/ios_rule_script/blob/master/rule/Shadowrocket/Steam/Steam.list) 列表筛选下载端点，排除商店、社区和其他宽泛的 SteamCN 直连范围。
 
-广告规则只能拦截覆盖范围内的广告。代理规则须由支持 UDP 的节点转发 UDP，否则拒绝；直连规则保持直连。STUN 伪装可能影响 Tailscale 公网点对点发现，实际打洞仍需设备验证。客户端退出后的持续阻断需要系统或客户端 kill switch。
+广告规则只能拦截覆盖范围内的广告。代理规则须由支持 UDP 的节点转发 UDP，否则拒绝；直连规则保持直连，因此直连目标可以使用 STUN，这也意味着浏览器侧必须另行限制 WebRTC。客户端退出后的持续阻断需要系统或客户端 kill switch。
 
 ## Mihomo
 
@@ -31,7 +32,7 @@ python3 merge_mihomo.py --input original.yaml --output protected.yaml --proxy-na
 
 脚本保留节点及其他顶层配置，替换通用 `rules`，合并本仓库 `rule-providers`，并替换 `tun`、`dns`、`ipv6`、`mode`、`hosts`。TUN 排除列表逐项读取 Shadowrocket 的 `tun-excluded-routes`，包含其局域网和 Tailscale IPv4 网段。应用前检查客户端是否额外注入绕过列表、应用排除、`listeners` 的专用规则或指定出站；这些可能绕过通用规则。
 
-DNS 使用 fake-IP，默认查询为指定代理上的加密 DoH，直连目标可使用阿里 DoH；`direct-nameserver-follow-policy` 确保校园/尾网访问仍使用专用 DNS。节点域名使用加密 DoH 引导，节点属于校园/尾网时也遵守专用策略。禁用系统 hosts，DNS 不回退到系统解析器；引导地址使用有有效 TLS 证书的 IP URL，避免明文 DNS 引导。**fake-IP 不是 STUN 伪装。** 为避免启动循环，节点域名的加密引导解析允许直连；这会向指定解析器暴露节点域名，但不使用 ISP 明文 DNS。校园及 Tailscale 的域名专用 DNS 自动从 Shadowrocket `[Host]` 同步，专用查询显式使用 DIRECT；这些域名排除 fake-IP，返回真实地址。
+DNS 使用 fake-IP，默认查询为指定代理上的加密 DoH，直连目标可使用阿里 DoH；`direct-nameserver-follow-policy` 确保校园/尾网访问仍使用专用 DNS。节点域名使用加密 DoH 引导，节点属于校园/尾网时也遵守专用策略。禁用系统 hosts，DNS 不回退到系统解析器；引导地址使用有有效 TLS 证书的 IP URL，避免明文 DNS 引导。**fake-IP 不是 STUN 伪装。** 为避免启动循环，节点域名的加密引导解析允许直连；这会向指定解析器暴露节点域名，但不使用 ISP 明文 DNS。校园及 Tailscale 的域名专用 DNS 自动从 Shadowrocket `[Host]` 同步，专用查询显式使用 DIRECT；这些域名排除 fake-IP，返回真实地址。`tailscale.com` / `tailscale.io`、`100.64.0.0/10`、`fd7a:115c:a1e0::/48` 和 `111.187.0.0/16` 在校园域名前直连；控制面和官方 DERP（HTTPS 443）因此直连，但 Tailscale 打洞的 STUN/peer UDP 仍按当前路由决定，未命中直连时会被代理或最后 UDP 兜底挡住。
 
 代理目标必须是实际节点或能静态核验的策略组，组内不能包含 DIRECT、PASS 等；带动态 `use`/`include-all` 或成员过滤条件的分组无法核验，会明确报错。此时请将要用的实际节点放入 `proxies`，或建立只引用这些节点的静态策略组，再用 `--proxy-name` 指定。不要把带节点凭据的 `original.yaml`、`protected.yaml` 提交到公开仓库。
 
@@ -52,8 +53,8 @@ Clash 的每个配置都有**扩展（Extend）**，其中“脚本”模式会�
 
 ### 脚本做了什么
 
-- 规则序列与 `Leora-Clash-Routing.yaml` 逐条一致：本地/校园/Tailscale 直连、DNS 接管、STUN/DoT 拦截、广告拒绝、Steam 下载直连、完整来源顺序和每条代理规则后的 UDP 拒绝兜底；`MATCH` 和 `#PROXY` 会替换为实际目标。当规则目标能在静态节点/策略组上核验时，输出与 `merge_mihomo.py` 的结果相同；节点或 provider 订阅由脚本自建目标，`merge_mihomo` 无法校验该目标，但规则内容与兜底仍相同。
-- 末尾在 `MATCH` 之前保留 `GEOIP,CN,DIRECT`，只兜底未被前面代理/直连规则命中的国内 IP（游戏 UDP、QUIC/CDN），不会抢在代理规则前。STUN/TURN/853 防护仍在所有国内直连之前全局生效：国内普通 UDP 恢复直连，但国内 STUN/DoT 仍被拦截，这是有意的安全边界，避免境外网页借国内 STUN 服务器获取真实公网 IP。
+- 规则序列与 `Leora-Clash-Routing.yaml` 逐条一致：本地/校园/Tailscale 直连、DNS 接管、DoT 拦截、广告拒绝、Steam 下载直连、完整来源顺序和每条代理规则后的 UDP 拒绝兜底；`MATCH` 和 `#PROXY` 会替换为实际目标。当规则目标能在静态节点/策略组上核验时，输出与 `merge_mihomo.py` 的结果相同；节点或 provider 订阅由脚本自建目标，`merge_mihomo` 无法校验该目标，但规则内容与兜底仍相同。
+- 末尾在 `MATCH` 之前保留 `GEOIP,CN,DIRECT`，只兜底未被前面代理/直连规则命中的国内 IP（游戏 UDP、QUIC/CDN），不会抢在代理规则前。STUN/TURN 不再全局拦截：直连目标允许，代理目标由同条件 UDP 拒绝兜底关闭；外部 DoT（853）仍全局阻断。直连 STUN 会重新暴露浏览器 WebRTC 面，浏览器限制仍是必须项。
 - 自动选择规则目标：优先 `PROXY`、`节点选择`、`手动选择` 等命名策略组，其次任一可静态核验到真实节点的策略组，再退到带 provider 来源（`use`/`include-all`/`include-all-proxies`）且静态成员可核验的动态组；都没有时用全部真实节点创建 `Leora-Proxy` 选择组。若订阅既没有可用真实节点、也没有非空 `proxy-providers`，脚本会直接报错而不是落入直连；只有 provider 时用它们创建 `Leora-Proxy`。
 - `rule-providers` 按名称合并：订阅自有 provider 保留，Leora provider 覆盖同名项；`proxy-providers` 原样保留。Clash 会把 provider 的 `path` 重写到自己的目录，无需手工处理。
 - 若订阅已有名为 `leora-dns-out` 且类型不是 `dns` 的节点，脚本会报错；若同名节点本来就是 `type: dns`，会被去重后重新追加，不报错。
@@ -183,13 +184,13 @@ Action 使用固定版本且校验 SHA-256 的官方核心，运行上述全部�
 
 - [Mihomo 路由规则](https://wiki.metacubex.one/config/rules/)、[UDP 不支持时继续匹配的核心实现](https://github.com/MetaCubeX/mihomo/blob/v1.19.32/tunnel/tunnel.go#L643)
 - [Mihomo TUN](https://wiki.metacubex.one/config/inbound/tun/)、[DNS 与指定代理](https://wiki.metacubex.one/config/dns/)
-- [Xray 路由与可嗅探协议](https://xtls.github.io/en/config/routing.html)：没有可直接使用的 STUN 协议路由条件，不能写一个 `protocol: stun` 假装防护生效。
+- [Xray 路由与可嗅探协议](https://xtls.github.io/en/config/routing.html)：没有可直接使用的 STUN 协议路由条件；STUN 跟随普通路由，直连目标放行、代理目标由 UDP 兜底关闭，不能声称端口级 STUN 拦截生效。
 
 浏览器 DNS 策略依据：[Chromium DnsOverHttpsMode](https://github.com/chromium/chromium/blob/main/components/policy/resources/templates/policy_definitions/Miscellaneous/DnsOverHttpsMode.yaml)、[Firefox TRR 用户设置](https://firefox-source-docs.mozilla.org/networking/dns/dns-over-https-trr.html#user-choice)。
 
 ## 基础设置同步范围
 
-`Leora-ProxyRules.conf` 的 `[General]` 和 `[Host]` 是唯一来源。生成器和合并器检查全部 15 个 General 选项；新增选项、缺失选项或尚未支持的取值会报错，Action 不会发布悄悄忽略这些设置的配置。`conversion-report.json` 的 `general_settings` 记录每个源值及实现边界。
+`Leora-ProxyRules.conf` 的 `[General]` 和 `[Host]` 是唯一来源。生成器和合并器检查全部 General 选项；新增选项、缺失选项或尚未支持的取值会报错，Action 不会发布悄悄忽略这些设置的配置。`conversion-report.json` 的 `general_settings` 记录每个源值及实现边界。
 
 | 源设置 | Mihomo | Xray JSON |
 | --- | --- | --- |
@@ -202,6 +203,6 @@ Action 使用固定版本且校验 SHA-256 的官方核心，运行上述全部�
 | `private-ip-answer=true` | 允许专用 DNS 返回私网地址 | 允许专用 DNS 返回私网地址 |
 | `bypass-system=false` | 不生成系统服务绕过；客户端额外绕过仍需关闭 | 不生成系统服务绕过；捕获范围由外部客户端控制 |
 | UDP 不支持时 REJECT | 对应代理规则后加入 UDP 拒绝，防止落入 DIRECT | 代理出错不回退 DIRECT |
-| STUN IPv4/IPv6 响应伪装 | 无原生等价；端口/域名拦截与浏览器限制 | 无原生等价；端口/域名拦截与浏览器限制 |
+| STUN IPv4/IPv6 响应伪装 | 不再伪造；STUN 跟随路由，直连放行、代理目标 UDP 兜底 | 不再伪造；STUN 跟随路由，直连放行、代理目标不回退 DIRECT |
 
 IPv6 设置不会修改操作系统网络栈，也不改写订阅中显式指定的 IPv6 节点地址。若需要整台设备禁用 IPv6，须在系统或客户端落实并实测。字段依据：[Mihomo 全局配置](https://wiki.metacubex.one/config/general/)、[Mihomo DNS](https://wiki.metacubex.one/config/dns/)、[Xray 26.3.27 Freedom 实现](https://github.com/XTLS/Xray-core/blob/v26.3.27/infra/conf/freedom.go)。

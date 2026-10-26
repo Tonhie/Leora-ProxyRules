@@ -31,10 +31,6 @@ def split_dns():
     return result
 
 
-# These transport guards cannot identify STUN on arbitrary ports. Browser WebRTC
-# restrictions remain necessary when preserving public DIRECT routing.
-STUN_PORTS = ('3478', '5349', '19302-19309')
-STUN_DOMAIN = r'(^|[.-])(stun[0-9]*|turn[0-9]*|turns)([.-]|$)'
 BOOTSTRAP_TAG = 'leora-bootstrap'
 BOOTSTRAP_DOH = 'https://223.5.5.5/dns-query'
 
@@ -58,8 +54,6 @@ GENERAL_MAPPING = {
     'ipv6': 'Mihomo global/DNS IPv6; Xray IPv4 DNS and ForceIPv4 direct dialing; client must prevent uncaptured IPv6',
     'prefer-ipv6': 'IPv4 only while IPv6 disabled; IPv6 preference mode unsupported',
     'udp-policy-not-supported-behaviour': 'Mihomo adjacent UDP REJECT guards; Xray proxy errors without DIRECT fallback',
-    'stun-response-ip': 'No native spoofing; scoped STUN block plus browser restriction required',
-    'stun-response-ipv6': 'No native spoofing; scoped STUN block plus browser restriction required',
     'private-ip-answer': 'Private split DNS answers accepted',
     'bypass-system': 'No generated system-service bypass; external client capture must be verified',
     'skip-proxy': 'Canonical DIRECT rules; external system proxy bypass needs client setup',
@@ -69,7 +63,6 @@ FIXED_GENERAL = {
     'dns-direct-system': 'false', 'dns-direct-fallback-proxy': 'false',
     'use-local-host-item-for-proxy': 'false', 'prefer-ipv6': 'false',
     'udp-policy-not-supported-behaviour': 'REJECT',
-    'stun-response-ip': '127.0.0.1', 'stun-response-ipv6': '::1',
     'private-ip-answer': 'true', 'bypass-system': 'false',
 }
 
@@ -182,17 +175,14 @@ def xray_dns():
 
 
 def mihomo_transport_guards():
-    return ['DST-PORT,' + '/'.join(STUN_PORTS) + ',REJECT',
-            'DOMAIN-REGEX,' + STUN_DOMAIN + ',REJECT',
-            'DST-PORT,853,REJECT']
+    # STUN follows the routing decision: DIRECT destinations are allowed and
+    # proxy destinations are closed by protected_mihomo's per-rule UDP guards.
+    return ['DST-PORT,853,REJECT']
 
 
 def xray_transport_guards():
+    # STUN follows the routing decision; only external DoT is globally denied.
     return [
-        {'type': 'field', 'network': 'tcp,udp', 'port': ','.join(STUN_PORTS),
-         'outboundTag': 'block', 'ruleTag': 'stun-ports'},
-        {'type': 'field', 'domain': ['regexp:' + STUN_DOMAIN],
-         'outboundTag': 'block', 'ruleTag': 'stun-domain'},
         {'type': 'field', 'network': 'tcp,udp', 'port': '853',
          'outboundTag': 'block', 'ruleTag': 'external-dot-deny'},
     ]

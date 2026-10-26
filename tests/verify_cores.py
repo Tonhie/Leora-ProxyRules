@@ -255,17 +255,26 @@ def run_case(binary, core, mode, supported, work, proxy, direct_tcp, direct_udp,
                 assert received == supported
                 assert before_direct == direct_hits[0], 'Proxy UDP fell into later DIRECT'
             if mode:
-                before_proxy = (proxy.hits, proxy_hits[0])
-                before_direct = (direct_tcp.hits, direct_hits[0], direct_tcp.stun.hits)
-                for blocked_port in (3478, 5349, 19302, 19309, 853):
-                    assert not send_tcp(port, blocked_port, 'direct.example'), 'STUN/DoT TCP escaped'
-                    assert not send_udp(port, blocked_port, 'direct.example'), 'STUN/DoT UDP escaped'
-                assert not send_tcp(port, target_tcp, 'stun.direct.example'), 'STUN domain TCP escaped'
-                assert not send_udp(port, target_udp, 'stun.direct.example'), 'STUN domain UDP escaped'
-                assert before_proxy == (proxy.hits, proxy_hits[0]), 'Blocked discovery reached proxy'
-                assert before_direct == (direct_tcp.hits, direct_hits[0], direct_tcp.stun.hits), 'Blocked discovery reached DIRECT'
-                assert send_tcp(port, 3478, 'peer.tail.ts.net'), 'Local tailnet STUN exception was lost'
-                assert send_udp(port, 3478, 'peer.tail.ts.net'), 'Local tailnet UDP exception was lost'
+                # STUN follows the route: DIRECT destinations are allowed,
+                # while IP/domain proxy matches keep the adjacent UDP reject.
+                before_stun = direct_tcp.stun.hits
+                before_udp = direct_hits[0]
+                assert send_tcp(port, 3478, 'direct.example'), 'Direct STUN TCP was blocked'
+                assert send_udp(port, 3478, 'direct.example'), 'Direct STUN UDP was blocked'
+                assert direct_tcp.stun.hits > before_stun and direct_hits[0] > before_udp
+                before_direct = direct_hits[0]
+                received_proxy_udp = send_udp(port, target_udp, 'proxy.example')
+                assert direct_hits[0] == before_direct, 'Proxy STUN UDP leaked to DIRECT'
+                if core == 'xray':
+                    assert received_proxy_udp == supported, 'Xray proxy STUN UDP behaviour changed'
+                if supported:
+                    before_proxy = proxy.hits
+                    assert send_tcp(port, 3478, 'proxy.example'), 'Proxy STUN TCP was not routed to proxy'
+                    assert proxy.hits > before_proxy, 'Proxy STUN TCP did not reach the proxy'
+                assert not send_tcp(port, 853, 'direct.example'), 'DoT TCP escaped the global guard'
+                assert not send_udp(port, 853, 'direct.example'), 'DoT UDP escaped the global guard'
+                assert send_tcp(port, 3478, 'peer.tail.ts.net'), 'Tailnet STUN TCP was not direct'
+                assert send_udp(port, 3478, 'peer.tail.ts.net'), 'Tailnet STUN UDP was not direct'
             if mode and supported:
                 before_proxy_tcp = proxy.hits
                 send_tcp(port, 80, 'dl.steam.clngaa.com')

@@ -4,7 +4,7 @@ Python 3.10+, pip install PyYAML. No subscription credentials are needed.
 """
 import argparse, concurrent.futures, datetime, hashlib, ipaddress, json, pathlib, re, urllib.request
 import yaml
-from routing_policy import mihomo_settings, protected_mihomo, protected_xray, xray_dns, dns_outbound, mihomo_dns_outbound, STUN_PORTS, public_dns, BOOTSTRAP_DOH, bypass_rules, basic_settings_audit, xray_direct_settings
+from routing_policy import mihomo_settings, protected_mihomo, protected_xray, xray_dns, dns_outbound, mihomo_dns_outbound, public_dns, BOOTSTRAP_DOH, bypass_rules, basic_settings_audit, xray_direct_settings
 SOURCE='https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/Leora-ProxyRules.conf'
 DEFAULT_BASE='https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main'
 P=pathlib.Path(__file__).resolve().parent
@@ -184,7 +184,7 @@ def run():
     used={v['url'].split('/providers/')[-1] for v in providers.values() if '/providers/' in v['url']}
     for stale in (P/'providers').glob('leora-*.yaml'):
         if stale.name not in used:stale.unlink()
-    dump('conversion-report.json',{'generated_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'source':SOURCE,'base':ARGS.base,'source_sha256':hashlib.sha256(conf.encode()).hexdigest(),'policy':'Full portable Shadowrocket rules in source order with local bypass, DNS interception, global STUN guards and a trailing GEOIP CN direct fallback for unmatched domestic IPs', 'general_settings':basic_settings_audit(),'privacy':{'public_dns':public_dns(),'bootstrap_dns':BOOTSTRAP_DOH,'stun_ports':list(STUN_PORTS),'native_stun_spoof':False,'browser_webrtc_restriction_required':True},'providers':conversions,'asn_sources':as_urls,'asn_prefix_counts':{n:len(v) for n,v in as_prefix.items()},'xray_rules':len(xr),'upstream_provider_count':sum(not r['url'].startswith(ARGS.base.rstrip('/')+'/providers/') for r in providers.values())})
+    dump('conversion-report.json',{'generated_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'source':SOURCE,'base':ARGS.base,'source_sha256':hashlib.sha256(conf.encode()).hexdigest(),'policy':'Full portable Shadowrocket rules in source order with local bypass, DNS interception, global DoT deny, route-dependent STUN and a trailing GEOIP CN direct fallback for unmatched domestic IPs', 'general_settings':basic_settings_audit(),'privacy':{'public_dns':public_dns(),'bootstrap_dns':BOOTSTRAP_DOH,'stun_policy':'DIRECT destinations allow STUN; proxy destinations keep adjacent UDP REJECT; unmatched UDP rejected after MATCH','native_stun_spoof':False,'browser_webrtc_restriction_required':True},'providers':conversions,'asn_sources':as_urls,'asn_prefix_counts':{n:len(v) for n,v in as_prefix.items()},'xray_rules':len(xr),'upstream_provider_count':sum(not r['url'].startswith(ARGS.base.rstrip('/')+'/providers/') for r in providers.values())})
     print(json.dumps({'providers':len(providers),'upstream_links':sum(not r['url'].startswith(ARGS.base.rstrip('/')+'/providers/') for r in providers.values()),'converted_providers':sum(r['url'].startswith(ARGS.base.rstrip('/')+'/providers/') for r in providers.values()),'xray_rules':len(xr),'unsupported_count':sum(len(r['unsupported']) for r in conversions)}))
 
 if __name__=='__main__':

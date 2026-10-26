@@ -295,13 +295,14 @@ class ClashScriptTests(unittest.TestCase):
 
     def test_same_name_rule_provider_is_replaced_by_the_canonical_one(self):
         payload = subscription()
-        payload['rule-providers']['leora-09'] = {
+        provider_name = next(iter(self.routing['rule-providers']))
+        payload['rule-providers'][provider_name] = {
             'type': 'http', 'behavior': 'domain', 'url': 'https://evil.example/x.yaml',
             'path': './x.yaml', 'interval': 60,
         }
         actual = run_script(payload)
-        self.assertEqual(actual['rule-providers']['leora-09'],
-                         self.routing['rule-providers']['leora-09'])
+        self.assertEqual(actual['rule-providers'][provider_name],
+                         self.routing['rule-providers'][provider_name])
         self.assertIn('airport', actual['rule-providers'])
 
     def test_existing_dns_typed_leora_out_is_deduplicated(self):
@@ -330,10 +331,9 @@ class ClashScriptTests(unittest.TestCase):
         expected = [remap_rule(rule, target) for rule in self.routing['rules']]
         self.assertEqual(rules, expected)
         self.assertEqual(rules.count('DST-PORT,53,leora-dns-out'), 1)
-        for guard in ('DST-PORT,3478/5349/19302-19309,REJECT',
-                      'DOMAIN-REGEX,(^|[.-])(stun[0-9]*|turn[0-9]*|turns)([.-]|$),REJECT',
-                      'DST-PORT,853,REJECT'):
-            self.assertEqual(rules.count(guard), 1)
+        self.assertNotIn('DST-PORT,3478/5349/19302-19309,REJECT', rules)
+        self.assertNotIn('DOMAIN-REGEX,(^|[.-])(stun[0-9]*|turn[0-9]*|turns)([.-]|$),REJECT', rules)
+        self.assertEqual(rules.count('DST-PORT,853,REJECT'), 1)
         for index, rule in enumerate(rules):
             parts = rule.split(',')
             position = -2 if parts[-1] == 'no-resolve' else -1
