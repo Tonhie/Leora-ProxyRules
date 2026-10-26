@@ -5,9 +5,20 @@ import unittest
 import yaml
 from merge_mihomo import merge_config
 from merge_xray import merge_subscription
+from build_rules import provider_name
 from routing_policy import STEAM_DOWNLOADS, STEAM_PROXY, protected_mihomo, protected_xray, xray_dns
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+class ProviderNameTests(unittest.TestCase):
+    def test_provider_names_depend_on_source_and_action_not_rule_order(self):
+        source = 'https://example.com/rules/BanAD.list'
+        first = provider_name(source, 'REJECT')
+        self.assertEqual(first, provider_name(source, 'REJECT'))
+        self.assertRegex(first, r'^leora-banad-[0-9a-f]{10}$')
+        self.assertNotEqual(first, provider_name(source, 'PROXY'))
+        self.assertNotEqual(first, provider_name('https://example.com/rules/Proxy.list', 'REJECT'))
 
 
 class PolicyTests(unittest.TestCase):
@@ -62,7 +73,7 @@ class PolicyTests(unittest.TestCase):
         for i, line in enumerate(entries):
             parts = line.split(',')
             if parts[0] in ('RULE-SET','DOMAIN-SET'):
-                rid = f'leora-{i:02d}'
+                rid = provider_name(parts[1], parts[2])
                 indexes = [j for j,r in enumerate(m['rules']) if r.startswith('RULE-SET,'+rid+',') or r.startswith('RULE-SET,'+rid+'-remote-')]
                 xi = [j for j,r in enumerate(x) if r.get('ruleTag')==rid]
                 self.assertTrue(indexes, line)

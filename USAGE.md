@@ -56,7 +56,7 @@ Clash 的每个配置都有**扩展（Extend）**，其中“脚本”模式会�
 - 规则序列与 `Leora-Clash-Routing.yaml` 逐条一致：本地/校园/Tailscale 直连、DNS 接管、DoT 拦截、广告拒绝、Steam 下载直连、完整来源顺序和每条代理规则后的 UDP 拒绝兜底；`MATCH` 和 `#PROXY` 会替换为实际目标。当规则目标能在静态节点/策略组上核验时，输出与 `merge_mihomo.py` 的结果相同；节点或 provider 订阅由脚本自建目标，`merge_mihomo` 无法校验该目标，但规则内容与兜底仍相同。
 - 末尾在 `MATCH` 之前保留 `GEOIP,CN,DIRECT`，只兜底未被前面代理/直连规则命中的国内 IP（游戏 UDP、QUIC/CDN），不会抢在代理规则前。STUN/TURN 不再全局拦截：直连目标允许，代理目标由同条件 UDP 拒绝兜底关闭；外部 DoT（853）仍全局阻断。直连 STUN 会重新暴露浏览器 WebRTC 面，浏览器限制仍是必须项。
 - 自动选择规则目标：优先 `PROXY`、`节点选择`、`手动选择` 等命名策略组，其次任一可静态核验到真实节点的策略组，再退到带 provider 来源（`use`/`include-all`/`include-all-proxies`）且静态成员可核验的动态组；都没有时用全部真实节点创建 `Leora-Proxy` 选择组。若订阅既没有可用真实节点、也没有非空 `proxy-providers`，脚本会直接报错而不是落入直连；只有 provider 时用它们创建 `Leora-Proxy`。
-- `rule-providers` 按名称合并：订阅自有 provider 保留，Leora provider 覆盖同名项；`proxy-providers` 原样保留。Clash 会把 provider 的 `path` 重写到自己的目录，无需手工处理。
+- `rule-providers` 按名称合并：订阅自有 provider 保留，Leora provider 覆盖同名项；`proxy-providers` 原样保留。Clash 会把 provider 的 `path` 重写到自己的目录，无需手工处理。生成的 Leora provider 名由**源 URL 和动作**稳定计算，不随源规则行号变化；这样源规则调整顺序时不会把不同列表误当成同一个 provider 继续使用旧缓存。若确实改了同一源列表的内容，等待 provider 刷新周期或手动清除旧缓存即可。
 - 若订阅已有名为 `leora-dns-out` 且类型不是 `dns` 的节点，脚本会报错；若同名节点本来就是 `type: dns`，会被去重后重新追加，不报错。
 - 固定残余差异：Clash 会额外写入 `tun.device: Clash`、重写 provider `path`、在订阅缺少时注入空的 `proxy-providers: {}`，并强制写入端口、`log-level`、`global-ua`、`profile.store-selected` 等应用级键；因此最终配置文本不可能与 YAML 逐字相同。
 

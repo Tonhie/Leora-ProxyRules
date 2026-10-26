@@ -35,4 +35,4 @@ Mihomo 默认目标为 `PROXY`，Xray 为 `proxy`，可用 `--proxy-name` / `--p
 
 **隐私防护：** 公网 DNS 经代理加密查询且无系统 DNS 回退；校园/Tailscale 继续使用专用 DNS。STUN 跟随路由：直连目标允许 STUN，代理目标保留同条件 UDP 拒绝兜底，未匹配 UDP 仍拒绝；外部 DoT 全局阻断。浏览器 WebRTC 限制仍需配合，实际防泄漏取决于客户端 TUN/VPN 接管与设备测试。详见 [用法与验证](USAGE.md)。
 
-更新：运行 GitHub Actions **Refresh Leora rules**，或执行 `python3 build_rules.py` 与 `python3 build_clash.py` 后提交生成文件。生成器读取本地 `Leora-ProxyRules.conf` 的全部分流规则与 `[Host]` DNS 映射，逐项检查来源、动作和顺序。UA/URL 匹配及 ASN 转换差异记录在 `conversion-report.json` 和用法文档中。第三方列表权利归来源项目。
+更新：运行 GitHub Actions **Refresh Leora rules**，或执行 `python3 build_rules.py` 与 `python3 build_clash.py` 后提交生成文件。生成器读取本地 `Leora-ProxyRules.conf` 的全部分流规则与 `[Host]` DNS 映射，逐项检查来源、动作和顺序；Leora provider 名由源 URL 和动作稳定计算，不随规则行号变化。UA/URL 匹配及 ASN 转换差异记录在 `conversion-report.json` 和用法文档中。第三方列表权利归来源项目。

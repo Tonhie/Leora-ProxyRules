@@ -2,7 +2,7 @@
 """Build linked Mihomo routing and ordered Xray overlays; fail on unknown rule types.
 Python 3.10+, pip install PyYAML. No subscription credentials are needed.
 """
-import argparse, concurrent.futures, datetime, hashlib, ipaddress, json, pathlib, re, urllib.request
+import argparse, concurrent.futures, datetime, hashlib, ipaddress, json, pathlib, re, urllib.parse, urllib.request
 import yaml
 from routing_policy import mihomo_settings, protected_mihomo, protected_xray, xray_dns, dns_outbound, mihomo_dns_outbound, public_dns, BOOTSTRAP_DOH, bypass_rules, basic_settings_audit, xray_direct_settings
 SOURCE='https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/Leora-ProxyRules.conf'
@@ -65,6 +65,14 @@ def alternative(u):
     if 'blackmatrix7/ios_rule_script/' not in u:return None
     return u.replace('/Shadowrocket/','/Clash/').replace('/QuantumultX/','/Clash/').replace('.list','.yaml')
 
+def provider_name(source,target):
+    """Stable provider id from the source URL and action, never from line order."""
+    parsed=urllib.parse.urlparse(source)
+    stem=pathlib.PurePosixPath(parsed.path).stem or parsed.netloc
+    slug=re.sub(r'[^a-z0-9]+','-',stem.lower()).strip('-')[:32].strip('-') or 'rules'
+    digest=hashlib.sha256((source+'\0'+target).encode()).hexdigest()[:10]
+    return f'leora-{slug}-{digest}'
+
 def dump(name,obj):
     (P/name).parent.mkdir(parents=True,exist_ok=True)
     (P/name).write_text(yaml.safe_dump(obj,allow_unicode=True,sort_keys=False,width=110) if name.endswith('.yaml') else json.dumps(obj,ensure_ascii=False,separators=(',',':'))+'\n')
@@ -122,7 +130,7 @@ def run():
         if typ=='FINAL':clash.append('MATCH,'+a[1]);xr.append({'type':'field','network':'tcp,udp','outboundTag':{'DIRECT':'direct','PROXY':'proxy','REJECT':'block'}[a[1]],'ruleTag':'final-proxy'});continue
         if typ not in ('RULE-SET','DOMAIN-SET'):
             rules,skipped=parse(','.join(a[:2]));clash.append(','.join(a));xray_rules(rules,a[2],f'inline-{i:02d}');continue
-        u,target=a[1:3];rid=f'leora-{i:02d}'
+        u,target=a[1:3];rid=provider_name(u,target)
         rules,skipped=parse(data[u],typ=='DOMAIN-SET')
         normalized=[classic(r) for r in rules]
         choice=None;reason='';behavior='classical'
@@ -158,7 +166,7 @@ def run():
                     except Exception:continue
                 subset=compare(pr)
                 if ps or not subset or not subset <= set(normalized) or not subset & remaining:continue
-                part=rid+'-remote-'+str(len(linked_parts))
+                part=rid+'-remote-'+hashlib.sha256(v.encode()).hexdigest()[:8]
                 providers[part]={'type':'http','behavior':mode,'format':'yaml','url':v,'path':f'./ruleset/{part}.yaml','interval':86400}
                 clash.append(f'RULE-SET,{part},{target}')
                 linked_parts.append(v);remaining-=subset
