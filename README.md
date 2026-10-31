@@ -29,7 +29,7 @@ Clash 脚本由 `python3 build_clash.py` 从同一份 Clash 规则生成，自�
 
 Mihomo 默认目标为 `PROXY`，Xray 为 `proxy`，可用 `--proxy-name` / `--proxy-tag` 修改。没有关闭防护或切换旧模式的参数。
 
-**DNS/Tailscale：** 校园域名和 `ts.net` 使用 Shadowrocket `[Host]` 中的指定 DNS；校园服务及 Tailscale 地址优先直连。Tailscale 的 IPv4/IPv6 地址绕过 Mihomo TUN，需已运行 Tailscale、校园网络或对应 VPN 可达。
+**DNS/Tailscale：** 校园域名和 `ts.net` 使用 Shadowrocket `[Host]` 中的指定 DNS；校园服务及 Tailscale 地址优先直连。Tailscale 的 IPv4/IPv6 地址绕过 Mihomo TUN，需已运行 Tailscale、校园网络或对应 VPN 可达。**系统代理客户端还需把 `ts.net` 加入绕过域名**，否则浏览器先经系统代理，DIRECT 出站绑定物理网卡时 tailnet 会约 5 秒超时；见 [系统代理旁路](USAGE.md#系统代理旁路浏览器访问-tailnet-的前提)。
 
 **分流：** 以 Shadowrocket 为唯一规则来源，Mihomo/Xray 保留全部可转换规则和优先级：广告拦截、国内服务直连、海外服务代理；Steam 下载域名直连，商店/社区代理。所有代理规则之后用 `GEOIP,CN,DIRECT` 兜底未命中的国内 IP（游戏/QUIC/CDN）；`tailscale.com` / `tailscale.io`、tailnet 地址和 `111.187.0.0/16` 提前直连，DERP 使用官方直连。STUN 跟随路由：直连目标允许，代理目标保留 UDP 兜底，外部 DoT 全局阻断。DNS 与 Tailscale 同步。
 

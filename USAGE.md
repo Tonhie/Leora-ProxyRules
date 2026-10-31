@@ -132,6 +132,21 @@ Tailscale 使用 `100.64.0.0/10` 和 `fd7a:115c:a1e0::/48`。三端保留本地�
 
 这些例外不安装、不启动 Tailscale，不添加操作系统的校园/子网路由。需要 Tailscale 本身运行、MagicDNS 正常，并使用完整的 `设备.尾网.ts.net` 名称；短主机名的搜索域由系统/Tailscale 管理。不要强制将本地 DNS/服务绑定到不支持相应路由的物理网卡。TUN 排除表示交由系统路由，不表示在没有 Tailscale 的机器上也能访问尾网。
 
+### 系统代理旁路（浏览器访问 tailnet 的前提）
+
+规则里的 `DIRECT` 只决定代理核心如何处理流量，**浏览器是否先把请求交给系统代理由操作系统设置决定**。Windows 上 Chrome/Edge 遵循 WinINET 的 `ProxyOverride`，FlClash 等客户端会用「系统代理 → 绕过域名」（`bypassDomain`）重写该值。该列表默认不含 `ts.net`，于是浏览器把 `https://<设备>.<尾网>.ts.net/` 先发到本地代理端口：
+
+- 代理核心的 `DIRECT` 出站若绑定物理网卡（Mihomo `tun.auto-detect-interface: true` 的常见结果），发往 `100.64.0.0/10` 的包会走物理网卡而不是 Tailscale 接口，约 5 秒后 TLS 握手失败，浏览器显示 `ERR_TIMED_OUT` /「无法访问此网站」——**即使目标就是本机**也一样。TUN 的 `route-exclude-address` 不覆盖这条系统代理路径。
+- 对照：`curl.exe --noproxy "*" https://<设备>.<尾网>.ts.net/` 正常（本机 DSH 未带 token 时返回 401，带 token 为 303 后 200），`curl.exe -x http://127.0.0.1:7890 https://<设备>.<尾网>.ts.net/` 约 5 秒失败。说明故障在系统代理/出站网卡，不在 Tailscale、MagicDNS 或服务端。tailscaled 是否在监听可用 `netstat -ano | findstr :443` 确认（监听地址应为 `100.64.0.0/10` 内的本机地址）。
+
+修复（建议 1、2 都做，第 1 步保证 FlClash 重启后仍生效）：
+
+1. FlClash → 设置 → 网络 → 系统代理 → 绕过域名，加入 `*ts.net`、`*tailscale.com`、`*tailscale.io`（FlClash 用 `*` 前缀匹配后缀，不是 `*.`）。保存后它会重写 `ProxyOverride`。
+2. 运行 `pwsh -File tools/apply_system_proxy_bypass.ps1 -FlClashPrefs`：需先完全退出 FlClash，脚本会同时写入 WinINET 与 FlClash 的 `bypassDomain`，并做写入校验和备份；`-Check` 只读检查，`-Remove` 仅撤销注册表条目。
+3. 临时验证：关闭 FlClash 的系统代理，或改用 `http://127.0.0.1:<DSH 端口>/?token=...` 本机地址。
+
+修改后重启浏览器（已运行实例不一定感知 WinINET 变更），首次访问带 `?token=`，之后 30 天 cookie 有效。不要用「让代理节点访问 tailnet」的思路：远程节点不在 tailnet 内，无法路由 `100.64.0.0/10`。实例记录见 [reports/dsh-access.md](reports/dsh-access.md)。
+
 依据：[Quad100](https://tailscale.com/docs/reference/quad100)、[Tailscale IPv6](https://tailscale.com/docs/concepts/ipv6)、[Xray DNS](https://xtls.github.io/config/dns.html)。
 
 ## 浏览器 WebRTC 限制（防泄漏部署必做）
