@@ -1,6 +1,11 @@
 name: Refresh Leora rules
 on:
   workflow_dispatch:
+  # Daily refresh of the domestic IPv6 provider (chn-iplist ipv6-cidr6) and the
+  # other remote rule/provider sources, so upstream list updates are picked up
+  # without a manual run.
+  schedule:
+    - cron: '17 19 * * *'   # 03:17 Asia/Shanghai, daily
   push:
     paths:
       - Leora-ProxyRules.conf

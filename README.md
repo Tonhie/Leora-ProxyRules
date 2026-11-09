@@ -15,7 +15,7 @@ python3 merge_mihomo.py --input original.yaml --output protected.yaml
 python3 merge_xray.py --input original.json --output protected.json
 ```
 
-Clash 脚本由 `python3 build_clash.py` 从同一份 Clash 规则生成，自动保留订阅节点并替换规则、DNS、TUN；应用级设置（规则模式、IPv6 关闭、TUN mixed 等）需按 [用法与验证](USAGE.md#clash-extend-脚本) 对齐。
+Clash 脚本由 `python3 build_clash.py` 从同一份 Clash 规则生成，自动保留订阅节点并替换规则、DNS、TUN；应用级设置（规则模式、IPv6 开启、TUN mixed 等）需按 [用法与验证](USAGE.md#clash-extend-脚本) 对齐。
 
 ## 文件说明
 
@@ -31,8 +31,8 @@ Mihomo 默认目标为 `PROXY`，Xray 为 `proxy`，可用 `--proxy-name` / `--p
 
 **DNS/Tailscale：** 校园域名和 `ts.net` 使用 Shadowrocket `[Host]` 中的指定 DNS；校园服务及 Tailscale 地址优先直连。Tailscale 的 IPv4/IPv6 地址绕过 Mihomo TUN，需已运行 Tailscale、校园网络或对应 VPN 可达。**系统代理客户端还需把 `ts.net` 加入绕过域名**，否则浏览器先经系统代理，DIRECT 出站绑定物理网卡时 tailnet 会约 5 秒超时；见 [系统代理旁路](USAGE.md#系统代理旁路浏览器访问-tailnet-的前提)。
 
-**分流：** 以 Shadowrocket 为唯一规则来源，Mihomo/Xray 保留全部可转换规则和优先级：广告拦截、国内服务直连、海外服务代理；Steam 下载域名直连，商店/社区代理。所有代理规则之后用 `GEOIP,CN,DIRECT` 兜底未命中的国内 IP（游戏/QUIC/CDN）；`tailscale.com` / `tailscale.io`、tailnet 地址和 `111.187.0.0/16` 提前直连，DERP 使用官方直连。STUN 跟随路由：直连目标允许，代理目标保留 UDP 兜底，外部 DoT 全局阻断。DNS 与 Tailscale 同步。
+**分流：** 以 Shadowrocket 为唯一规则来源，Mihomo/Xray 保留全部可转换规则和优先级：广告拦截、国内服务直连、海外服务代理；Steam 下载域名直连，商店/社区代理。所有代理规则之后用 `GEOIP,CN,DIRECT` 兜底未命中的国内 IP（游戏/QUIC/CDN）；`tailscale.com` / `tailscale.io`、tailnet 地址和 `111.187.0.0/16` 提前直连，DERP 使用官方直连。STUN 跟随路由：直连目标允许，代理目标保留 UDP 兜底，外部 DoT 全局阻断。DNS 与 Tailscale 同步。IPv6 已启用：国内/尾网 IPv6 直连（域名规则 + 新增 IPv6 前缀规则集），其余真实 IPv6 被拒绝、回退 IPv4（Xray 仍走代理）（见[国内 IPv6 直连](USAGE.md#国内-ipv6-直连)）。
 
-**隐私防护：** 公网 DNS 经代理加密查询且无系统 DNS 回退；校园/Tailscale 继续使用专用 DNS。STUN 跟随路由：直连目标允许 STUN，代理目标保留同条件 UDP 拒绝兜底，未匹配 UDP 仍拒绝；外部 DoT 全局阻断。浏览器 WebRTC 限制仍需配合，实际防泄漏取决于客户端 TUN/VPN 接管与设备测试。详见 [用法与验证](USAGE.md)。
+**隐私防护：** 公网 DNS 经代理加密查询且无系统 DNS 回退；校园/Tailscale 继续使用专用 DNS。STUN 跟随路由：直连目标允许 STUN，代理目标保留同条件 UDP 拒绝兜底，未匹配 UDP 仍拒绝；外部 DoT 全局阻断。浏览器 WebRTC 限制仍需配合，实际防泄漏取决于客户端 TUN/VPN 是否同时接管 IPv4 与 IPv6、Clash/FlClash 应用层 IPv6 是否开启，以及设备测试。详见 [用法与验证](USAGE.md)。
 
 更新：运行 GitHub Actions **Refresh Leora rules**，或执行 `python3 build_rules.py` 与 `python3 build_clash.py` 后提交生成文件。生成器读取本地 `Leora-ProxyRules.conf` 的全部分流规则与 `[Host]` DNS 映射，逐项检查来源、动作和顺序；Leora provider 名由源 URL 和动作稳定计算，不随规则行号变化。UA/URL 匹配及 ASN 转换差异记录在 `conversion-report.json` 和用法文档中。第三方列表权利归来源项目。

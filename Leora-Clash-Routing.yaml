@@ -1,5 +1,5 @@
 mode: rule
-ipv6: false
+ipv6: true
 hosts:
   localhost: 127.0.0.1
 tun:
@@ -8,6 +8,8 @@ tun:
   auto-route: true
   auto-detect-interface: true
   strict-route: true
+  inet6-address:
+  - fdfe:dcba:9876::1/126
   dns-hijack:
   - any:53
   - tcp://any:53
@@ -18,14 +20,16 @@ tun:
   - 169.254.0.0/16
   - 172.16.0.0/12
   - 192.168.0.0/16
+  - fd7a:115c:a1e0::/48
 dns:
   enable: true
-  ipv6: false
+  ipv6: true
   respect-rules: true
   use-system-hosts: false
   direct-nameserver-follow-policy: true
   enhanced-mode: fake-ip
   fake-ip-range: 198.18.0.1/16
+  fake-ip-range6: fc00::/18
   fake-ip-filter:
   - +.ts.net
   - +.tongji.edu.cn
@@ -125,6 +129,13 @@ rule-providers:
     format: yaml
     url: https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/providers/leora-china-domain-ea36d95cfc.yaml
     path: ./ruleset/leora-china-domain-ea36d95cfc.yaml
+    interval: 86400
+  leora-ipv6-cidr6-79e2e3a54f:
+    type: http
+    behavior: ipcidr
+    format: yaml
+    url: https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/providers/leora-ipv6-cidr6-79e2e3a54f.yaml
+    path: ./ruleset/leora-ipv6-cidr6-79e2e3a54f.yaml
     interval: 86400
   leora-bilibili-8309ab8776:
     type: http
@@ -418,6 +429,7 @@ rules:
 - IP-CIDR,169.254.0.0/16,DIRECT,no-resolve
 - IP-CIDR,172.16.0.0/12,DIRECT,no-resolve
 - IP-CIDR,192.168.0.0/16,DIRECT,no-resolve
+- IP-CIDR6,fd7a:115c:a1e0::/48,DIRECT,no-resolve
 - DOMAIN-SUFFIX,ts.net,DIRECT
 - DST-PORT,853,REJECT
 - DOMAIN-SUFFIX,tailscale.com,DIRECT
@@ -467,6 +479,8 @@ rules:
 - RULE-SET,leora-china-a7f043cebf,DIRECT
 - RULE-SET,leora-china-43be850ec4,DIRECT
 - RULE-SET,leora-china-domain-ea36d95cfc,DIRECT
+- RULE-SET,leora-ipv6-cidr6-79e2e3a54f,DIRECT
+- IP-CIDR6,2000::/3,REJECT,no-resolve
 - DOMAIN-SUFFIX,tonhie.online,DIRECT
 - RULE-SET,leora-bilibili-8309ab8776,DIRECT
 - RULE-SET,leora-epic-6695e1299e,DIRECT

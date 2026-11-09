@@ -8,6 +8,9 @@ from routing_policy import mihomo_settings, protected_mihomo, protected_xray, xr
 SOURCE='https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/Leora-ProxyRules.conf'
 DEFAULT_BASE='https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main'
 P=pathlib.Path(__file__).resolve().parent
+# Inline rules that are Shadowrocket/Clash-only: Xray's IPOnDemand resolver would turn
+# the broad IPv6 reject into a domain block, so the Xray overlay keeps proxy rules instead.
+XRAY_SKIP_INLINE={'IP-CIDR6,2000::/3,REJECT,no-resolve'}
 CACHE=P/'.cache'; CACHE.mkdir(exist_ok=True)
 
 def fetch(url):
@@ -18,7 +21,7 @@ def fetch(url):
         try:
             req=urllib.request.Request(url,headers={'User-Agent':'Leora-Rule-Builder/1.0'})
             data=urllib.request.urlopen(req,timeout=35).read()
-            text=data.decode('utf-8-sig');path.write_text(text);return text
+            text=data.decode('utf-8-sig');path.write_text(text,encoding='utf-8');return text
         except Exception:
             if attempt==2: raise
 
@@ -75,11 +78,24 @@ def provider_name(source,target):
 
 def dump(name,obj):
     (P/name).parent.mkdir(parents=True,exist_ok=True)
-    (P/name).write_text(yaml.safe_dump(obj,allow_unicode=True,sort_keys=False,width=110) if name.endswith('.yaml') else json.dumps(obj,ensure_ascii=False,separators=(',',':'))+'\n')
+    (P/name).write_text(yaml.safe_dump(obj,allow_unicode=True,sort_keys=False,width=110) if name.endswith('.yaml') else json.dumps(obj,ensure_ascii=False,separators=(',',':'))+'\n',encoding='utf-8')
+
+def stable_report(report,previous):
+    """Keep the previous generated_utc when nothing but the timestamp changed.
+
+    Scheduled refreshes must not commit a daily timestamp-only diff; a real
+    upstream or configuration change still produces a new timestamp.
+    """
+    if not isinstance(previous,dict):return report
+    # Compare the JSON form: in-memory int keys (ASN ids) serialize to strings.
+    normalized=json.loads(json.dumps(report))
+    if {k:v for k,v in previous.items() if k!='generated_utc'}=={k:v for k,v in normalized.items() if k!='generated_utc'}:
+        report['generated_utc']=previous.get('generated_utc',report['generated_utc'])
+    return report
 
 def run():
     basic_settings_audit()
-    conf=(P/'Leora-ProxyRules.conf').read_text()
+    conf=(P/'Leora-ProxyRules.conf').read_text(encoding='utf-8')
     entries=[];in_rules=False
     for line in conf.splitlines():
         line=line.strip()
@@ -129,11 +145,16 @@ def run():
         a=line.split(',');typ=a[0]
         if typ=='FINAL':clash.append('MATCH,'+a[1]);xr.append({'type':'field','network':'tcp,udp','outboundTag':{'DIRECT':'direct','PROXY':'proxy','REJECT':'block'}[a[1]],'ruleTag':'final-proxy'});continue
         if typ not in ('RULE-SET','DOMAIN-SET'):
-            rules,skipped=parse(','.join(a[:2]));clash.append(','.join(a));xray_rules(rules,a[2],f'inline-{i:02d}');continue
+            rules,skipped=parse(','.join(a[:2]));clash.append(','.join(a))
+            if line not in XRAY_SKIP_INLINE:xray_rules(rules,a[2],f'inline-{i:02d}')
+            continue
         u,target=a[1:3];rid=provider_name(u,target)
         rules,skipped=parse(data[u],typ=='DOMAIN-SET')
         normalized=[classic(r) for r in rules]
-        choice=None;reason='';behavior='classical'
+        # An all-IP source is stored as an ipcidr provider: Mihomo matches it through a
+        # prefix trie instead of compiling thousands of classical rules in order.
+        ip_only=bool(rules) and all(k in ('IP-CIDR','IP-CIDR6') for k,_,_ in rules)
+        choice=None;reason='';behavior='ipcidr' if ip_only else 'classical'
         alt=alternative(u)
         if alt in data:
             candidate=yaml.safe_load(data[alt])
@@ -148,7 +169,7 @@ def run():
                     except Exception:pass
         # Keep the original remote URL only if it is already legal classical text.
         original_lines=significant(data[u])
-        if choice is None and not skipped and typ=='RULE-SET' and original_lines==normalized:
+        if choice is None and not ip_only and not skipped and typ=='RULE-SET' and original_lines==normalized:
             choice=(u,'text');reason='Original URL retained without conversion'
         linked_parts=[]
         if choice is None and alt:
@@ -176,8 +197,11 @@ def run():
             conversions.append({'id':rid,'source':u,'action':target,'clash_urls':linked_parts,'reason':'Union of verified equivalent upstream providers','source_sha256':hashlib.sha256(data[u].encode()).hexdigest(),'converted_rules':len(rules),'unsupported':skipped})
             continue
         if choice is None:
-            name=f'providers/{rid}.yaml';dump(name,{'payload':normalized})
-            choice=(ARGS.base.rstrip('/')+'/'+name,'yaml');reason='No verified equivalent upstream payload; converted provider hosted in your repository'
+            payload=[v for k,v,n in rules] if ip_only else normalized
+            name=f'providers/{rid}.yaml';dump(name,{'payload':payload})
+            choice=(ARGS.base.rstrip('/')+'/'+name,'yaml')
+            reason=('All entries are IP prefixes; converted to an ipcidr provider for prefix-trie matching' if ip_only
+                    else 'No verified equivalent upstream payload; converted provider hosted in your repository')
         providers[rid]={'type':'http','behavior':behavior,'format':choice[1],'url':choice[0],'path':f'./ruleset/{rid}.{choice[1]}','interval':86400}
         clash.append(f'RULE-SET,{rid},{target}')
         xray_rules(rules,target,rid)
@@ -192,7 +216,12 @@ def run():
     used={v['url'].split('/providers/')[-1] for v in providers.values() if '/providers/' in v['url']}
     for stale in (P/'providers').glob('leora-*.yaml'):
         if stale.name not in used:stale.unlink()
-    dump('conversion-report.json',{'generated_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'source':SOURCE,'base':ARGS.base,'source_sha256':hashlib.sha256(conf.encode()).hexdigest(),'policy':'Full portable Shadowrocket rules in source order with local bypass, DNS interception, global DoT deny, route-dependent STUN and a trailing GEOIP CN direct fallback for unmatched domestic IPs', 'general_settings':basic_settings_audit(),'privacy':{'public_dns':public_dns(),'bootstrap_dns':BOOTSTRAP_DOH,'stun_policy':'DIRECT destinations allow STUN; proxy destinations keep adjacent UDP REJECT; unmatched UDP rejected after MATCH','native_stun_spoof':False,'browser_webrtc_restriction_required':True},'providers':conversions,'asn_sources':as_urls,'asn_prefix_counts':{n:len(v) for n,v in as_prefix.items()},'xray_rules':len(xr),'upstream_provider_count':sum(not r['url'].startswith(ARGS.base.rstrip('/')+'/providers/') for r in providers.values())})
+    report={'generated_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'source':SOURCE,'base':ARGS.base,'source_sha256':hashlib.sha256(conf.encode()).hexdigest(),'policy':'Full portable Shadowrocket rules in source order with local bypass, DNS interception, global DoT deny, route-dependent STUN, an ipcidr DIRECT rule set for mainland-China IPv6 prefixes and a trailing GEOIP CN direct fallback for unmatched domestic IPv4', 'general_settings':basic_settings_audit(),'privacy':{'public_dns':public_dns(),'bootstrap_dns':BOOTSTRAP_DOH,'stun_policy':'DIRECT destinations allow STUN; proxy destinations keep adjacent UDP REJECT; unmatched UDP rejected after MATCH','native_stun_spoof':False,'browser_webrtc_restriction_required':True},'providers':conversions,'asn_sources':as_urls,'asn_prefix_counts':{n:len(v) for n,v in as_prefix.items()},'xray_rules':len(xr),'upstream_provider_count':sum(not r['url'].startswith(ARGS.base.rstrip('/')+'/providers/') for r in providers.values())}
+    previous=P/'conversion-report.json'
+    if previous.exists():
+        try:report=stable_report(report,json.loads(previous.read_text(encoding='utf-8')))
+        except ValueError:pass
+    dump('conversion-report.json',report)
     print(json.dumps({'providers':len(providers),'upstream_links':sum(not r['url'].startswith(ARGS.base.rstrip('/')+'/providers/') for r in providers.values()),'converted_providers':sum(r['url'].startswith(ARGS.base.rstrip('/')+'/providers/') for r in providers.values()),'xray_rules':len(xr),'unsupported_count':sum(len(r['unsupported']) for r in conversions)}))
 
 if __name__=='__main__':

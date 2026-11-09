@@ -355,13 +355,13 @@ class ClashScriptTests(unittest.TestCase):
         target = '🚀 节点选择'
         actual = run_script(subscription())
         # Clash overwrites these after the script; a user matching the
-        # documented settings (rule mode, IPv6 off, TUN mixed, bypass private
+        # documented settings (rule mode, IPv6 on, TUN mixed, bypass private
         # off) gets the canonical rules, DNS and hosts. Clash's real default
         # bypassPrivateRoute=true would append private ranges, which is why the
         # checklist requires turning it off.
         final = copy.deepcopy(actual)
         final['mode'] = 'rule'
-        final['ipv6'] = False
+        final['ipv6'] = True
         final['tun'].update({
             'enable': True,
             'device': 'Clash',
@@ -387,7 +387,7 @@ class ClashScriptTests(unittest.TestCase):
         self.assertEqual(final['tun']['route-exclude-address'],
                          self.routing['tun']['route-exclude-address'])
         self.assertEqual(final['mode'], 'rule')
-        self.assertFalse(final['ipv6'])
+        self.assertTrue(final['ipv6'])
 
 
 if __name__ == '__main__':

@@ -1,13 +1,13 @@
 # WebRTC 防泄漏配置
 
-Mihomo/Xray 通过“代理连接，代理不可用时失败”降低真实公网 IP 泄漏风险；STUN 现在跟随路由：直连目标放行，代理目标关闭。防护只作用于**已进入代理核心的流量**；需要客户端 TUN/VPN 接管 IPv4，并在客户端或系统层阻断未接管的 IPv6。仅导入路由或打开系统 HTTP 代理不足以覆盖浏览器 UDP。
+Mihomo/Xray 通过“代理连接，代理不可用时失败”降低真实公网 IP 泄漏风险；STUN 现在跟随路由：直连目标放行，代理目标关闭。防护只作用于**已进入代理核心的流量**；需要客户端 TUN/VPN 接管 IPv4 与 IPv6。Mihomo 与 Shadowrocket 的 TUN 配置会接管 IPv6；Xray 路由 JSON 不安装 TUN，客户端无法接管 IPv6 时仍须在系统或网络层阻断。仅导入路由或打开系统 HTTP 代理不足以覆盖浏览器 UDP。
 
 ## 默认策略
 
 只有防护配置，没有普通版或模式开关。
 
 - Shadowrocket：使用 `Leora-ProxyRules.conf`，保留原有分流和 UDP 不支持时拒绝；不再伪造 STUN 响应，STUN 直连/代理行为跟随路由。
-- Mihomo/Xray：内部 DNS 接管 → 原本地/校园/Tailscale 绕过 → 隐私防护（DoT） → Shadowrocket 完整可转换分流顺序 → 国内 IP 兜底直连。国内/B站/Apple 等继续按源规则直连；Steam 下载直连、商店/社区代理。所有代理规则之后、`MATCH` 之前增加 `GEOIP,CN,DIRECT`，只兜底未被显式列表覆盖的国内 IP（游戏、QUIC/CDN 等），不抢在代理规则前面。
+- Mihomo/Xray：内部 DNS 接管 → 原本地/校园/Tailscale 绕过 → 隐私防护（DoT） → Shadowrocket 完整可转换分流顺序 → 国内 IP 兜底直连。国内/B站/Apple 等继续按源规则直连；Steam 下载直连、商店/社区代理。所有代理规则之后、`MATCH` 之前增加 `GEOIP,CN,DIRECT`，只兜底未被显式列表覆盖的国内 IP（游戏、QUIC/CDN 等），不抢在代理规则前面。China DIRECT 块另加国内 IPv6 前缀直连规则集，其余 IPv6 目标最终落到 `FINAL`/`MATCH` 走代理，详见[国内 IPv6 直连](#国内-ipv6-直连)。
 - STUN/TURN：不再有全局端口/域名拒绝。STUN 服务按路由决定：直连目标允许，代理目标在同条件 UDP 拒绝兜底处关闭，未匹配 UDP 仍被最后一条 `NETWORK,udp,REJECT` 拒绝。因此国内/直连站点可以拿到真实映射，代理目标不会以真实 IP 直连。
 - 隐私防护：拒绝外部 TCP/UDP `853`，避免应用绕过配置的 DNS 使用 DoT/DoQ；该规则仍在所有国内直连之前全局生效。**STUN 放行会增加浏览器 WebRTC 暴露面**：恶意网页可以利用任意直连 STUN 服务器取得真实公网 IP；因此浏览器侧 WebRTC 限制仍是必须项，路由层不再假装能完全拦截 STUN。
 - Mihomo 在每条 PROXY 规则后保留同条件 UDP 拒绝兜底，节点不支持 UDP 时不落入后面的 DIRECT。Xray 代理出口失败后不会重新匹配直连规则。末尾的 `GEOIP,CN,DIRECT` 位于全部代理规则之后，不会让本应代理的流量提前直连；代理规则后的 UDP 兜底仍只作用于代理命中项。
@@ -16,6 +16,19 @@ Mihomo/Xray 通过“代理连接，代理不可用时失败”降低真实公�
 - 下载区域须在 Steam 客户端选择中国大陆；规则不能控制 Steam 实际选择哪个 CDN，未知下载域名仍走代理。依据 [SteamCN](https://github.com/blackmatrix7/ios_rule_script/blob/master/rule/Shadowrocket/SteamCN/SteamCN.list) 和 [Steam](https://github.com/blackmatrix7/ios_rule_script/blob/master/rule/Shadowrocket/Steam/Steam.list) 列表筛选下载端点，排除商店、社区和其他宽泛的 SteamCN 直连范围。
 
 广告规则只能拦截覆盖范围内的广告。代理规则须由支持 UDP 的节点转发 UDP，否则拒绝；直连规则保持直连，因此直连目标可以使用 STUN，这也意味着浏览器侧必须另行限制 WebRTC。客户端退出后的持续阻断需要系统或客户端 kill switch。
+
+## 国内 IPv6 直连
+
+`[General]` 现为 `ipv6 = true`（`prefer-ipv6` 仍为 `false`，IPv4 保持优先）。China DIRECT 块在 `China_Domain.list` 之后、`DOMAIN-SUFFIX,tonhie.online` 之前新增一条 `RULE-SET,https://raw.githubusercontent.com/PaPerseller/chn-iplist/master/ruleset/ipv6-cidr6.list,DIRECT`。该列表与仓库既有的 proxy-special/reject-special/direct-cdn 来自同一维护者，是大陆 IPv6 前缀表（约 2018 条 `IP-CIDR6,...,no-resolve`）；Shadowrocket 直接抓取上游 URL。
+
+- 分流效果：China 列表几乎不含 IPv6，此前 `ipv6 = false` 会丢弃 AAAA。现在按客户端分别处理：Shadowrocket 返回真实 AAAA，大陆 IPv6 目标命中前缀规则直连，其余**真实 IPv6** 命中 `IP-CIDR6,2000::/3,REJECT,no-resolve` 被立即拒绝，应用回退 IPv4；Mihomo 的 AAAA 由 fake-IP 的 IPv6 段（`fc00::/18`）应答，域名按域名规则分流（国内域名直连、境外域名代理、广告拒绝），只有字面量 IPv6 才进入前缀规则和拒绝规则；Xray 返回真实 AAAA 并在路由中按 IPv6 前缀匹配（该拒绝规则不加入 Xray，见下）。`prefer-ipv6 = false` 只影响 Shadowrocket 的地址族选择。
+- 节点要求：Mihomo/Shadowrocket 的域名代理在节点侧解析域名，节点只有 IPv4 也能正常代理境外站点；只有“真实 IPv6 字面量经代理”才需要节点支持 IPv6（Shadowrocket/Clash 已直接拒绝，Xray 仍保留代理路径）。无法接受时按下面的回退步骤禁用 IPv6；上游 `chn-iplist` 的说明也是“服务器不支持 IPv6 时设为仅 IPv4”。
+- Mihomo/FlClash：顶层 `ipv6: true`、`dns.ipv6: true`，TUN 写入 `inet6-address: fdfe:dcba:9876::1/126`，fake-IP 增加 IPv6 段 `fake-ip-range6: fc00::/18`（缺省时 mihomo 1.19.32 对 AAAA 直接返回空答案）。新增的 `IP-CIDR6,2000::/3,REJECT,no-resolve` 只拒绝真实 IPv6：fake-IP 的 `fc00::/18` 不在 `2000::/3` 内，且域名连接先恢复域名再匹配规则，因此境外域名按域名规则走代理，不会被误拒。该来源全部为 IP 前缀，生成器把它转成 `behavior: ipcidr` 的 rule-provider（裸 CIDR payload，托管在本仓库 `providers/` 下），并在同一 China 位置输出 `RULE-SET,<provider>,DIRECT`。
+- Xray：DNS `queryStrategy` 与直连出口均为 `UseIP`；该列表在路由中展开为 `ip` 条目、`outboundTag: direct`，位置与 Shadowrocket 源顺序一致。**`IP-CIDR6,2000::/3,REJECT` 不转换到 Xray**：Xray 的 `IPOnDemand` 会对域名做 IP 规则解析，若加入这条会在域名规则之前把境外域名整体 block；因此 Xray 保留“其余 IPv6 走代理”的行为。
+- 应用层要求：Clash/FlClash 的 IPv6 必须开启（工具 → 常规 → 内核 → IPv6 = 开启；Android 进阶配置 → 网络 → VPN 中开启 IPv6），否则应用会覆盖脚本并禁用 IPv6。TUN 必须保持开启，否则 IPv6 不被接管。见[必须手动对齐的 Clash 应用级设置](#必须手动对齐的-clash-应用级设置)。
+- 已知取舍：大陆 IPv6 依赖“前缀命中”——不在大陆 IPv6 列表里的国内地址会被 `2000::/3` 拒绝规则拒绝；境外 IPv6-only 站点同样会被拒绝（这是“国外禁用 IPv6”的直接后果），需要访问时只能改该行为 `PROXY` 并确保节点有 IPv6。Mihomo 的 IPv6 域名连接使用 fake 地址（`fc00::/18`），IP 前缀规则不参与域名连接的分流：不在 China 域名列表里但解析到大陆 IPv6 的域名仍会走代理；直连出站对域名使用哪一地址族由核心/解析器决定，不强制 IPv6 优先（`prefer-ipv6` 固定 `false`，且只有 Shadowrocket 有该开关）。
+- 未采用的替代方案：曾评估把大陆 v6 前缀加入 Shadowrocket `tun-excluded-routes` / Mihomo `tun.route-exclude-address`，但没有采用。Mihomo 的 `route-exclude-address-set` 只在 Linux auto-redirect 模式生效，普通 TUN 无效；把约 2018 条前缀内联进单一源配置会明显膨胀，且在 IPv6 已启用、内核按规则集分流后是冗余的；DIRECT 规则集同时覆盖 TUN 与系统代理路径。**但 Tailscale 的 `fd7a:115c:a1e0::/48` 必须加入 `tun-excluded-routes`（已加入）**：否则启用 IPv6 后 TUN 会接管尾网 IPv6，`leora-mc` 这类尾网主机就不再直连。结果满足目标：大陆/尾网 IPv6 直连，其余真实 IPv6 拒绝，不因直连泄漏。
+- 回退：把 `ipv6` 改回 `false` 并重新运行 `build_rules.py`、`build_clash.py`，同时关闭客户端应用层 IPv6。`prefer-ipv6` 为固定值，改动会触发审计失败。仓库每天由 GitHub Actions 重新拉取该列表并提交刷新后的 provider。
 
 ## Mihomo
 
@@ -28,11 +41,11 @@ python3 merge_mihomo.py --input original.yaml --output protected.yaml
 python3 merge_mihomo.py --input original.yaml --output protected.yaml --proxy-name MY-NODE
 ```
 
-将 `protected.yaml` 作为客户端配置加载，保持 **Rule/规则模式**，开启客户端 TUN 权限并确认 IPv4 被接管、未接管的 IPv6 已阻断。订阅或原配置更新后，需要重新执行合并并重新加载。
+将 `protected.yaml` 作为客户端配置加载，保持 **Rule/规则模式** 并开启客户端 TUN 权限。合并结果已开启 IPv6，写入 IPv6 TUN 地址（`fdfe:dcba:9876::1/126`）和 fake-IP 的 IPv6 段（`fc00::/18`），需确认 TUN 同时接管 IPv4 与 IPv6；系统或客户端若另有 IPv6 开关，不要关闭。订阅或原配置更新后，需要重新执行合并并重新加载。
 
-脚本保留节点及其他顶层配置，替换通用 `rules`，合并本仓库 `rule-providers`，并替换 `tun`、`dns`、`ipv6`、`mode`、`hosts`。TUN 排除列表逐项读取 Shadowrocket 的 `tun-excluded-routes`，包含其局域网和 Tailscale IPv4 网段。应用前检查客户端是否额外注入绕过列表、应用排除、`listeners` 的专用规则或指定出站；这些可能绕过通用规则。
+脚本保留节点及其他顶层配置，替换通用 `rules`，合并本仓库 `rule-providers`，并替换 `tun`、`dns`、`ipv6`、`mode`、`hosts`。TUN 排除列表逐项读取 Shadowrocket 的 `tun-excluded-routes`，包含其局域网、Tailscale IPv4 与 IPv6 网段。应用前检查客户端是否额外注入绕过列表、应用排除、`listeners` 的专用规则或指定出站；这些可能绕过通用规则。
 
-DNS 使用 fake-IP，默认查询为指定代理上的加密 DoH，直连目标可使用阿里 DoH；`direct-nameserver-follow-policy` 确保校园/尾网访问仍使用专用 DNS。节点域名使用加密 DoH 引导，节点属于校园/尾网时也遵守专用策略。禁用系统 hosts，DNS 不回退到系统解析器；引导地址使用有有效 TLS 证书的 IP URL，避免明文 DNS 引导。**fake-IP 不是 STUN 伪装。** 为避免启动循环，节点域名的加密引导解析允许直连；这会向指定解析器暴露节点域名，但不使用 ISP 明文 DNS。校园及 Tailscale 的域名专用 DNS 自动从 Shadowrocket `[Host]` 同步，专用查询显式使用 DIRECT；这些域名排除 fake-IP，返回真实地址。`tailscale.com` / `tailscale.io`、`100.64.0.0/10`、`fd7a:115c:a1e0::/48` 和 `111.187.0.0/16` 在校园域名前直连；控制面和官方 DERP（HTTPS 443）因此直连，但 Tailscale 打洞的 STUN/peer UDP 仍按当前路由决定，未命中直连时会被代理或最后 UDP 兜底挡住。
+DNS 使用 fake-IP，默认查询为指定代理上的加密 DoH，直连目标可使用阿里 DoH；`direct-nameserver-follow-policy` 确保校园/尾网访问仍使用专用 DNS。节点域名使用加密 DoH 引导，节点属于校园/尾网时也遵守专用策略。禁用系统 hosts，DNS 不回退到系统解析器；引导地址使用有有效 TLS 证书的 IP URL，避免明文 DNS 引导。**fake-IP 不是 STUN 伪装。** 为避免启动循环，节点域名的加密引导解析允许直连；这会向指定解析器暴露节点域名，但不使用 ISP 明文 DNS。校园及 Tailscale 的域名专用 DNS 自动从 Shadowrocket `[Host]` 同步，专用查询显式使用 DIRECT；这些域名排除 fake-IP，返回真实地址。`tailscale.com` / `tailscale.io`、`100.64.0.0/10`、`fd7a:115c:a1e0::/48` 和 `111.187.0.0/16` 在校园域名前直连；控制面和官方 DERP（HTTPS 443）因此直连，但 Tailscale 打洞的 STUN/peer UDP 仍按当前路由决定，未命中直连时会被代理或最后 UDP 兜底挡住。Mihomo 的 fake-IP 同时配置 IPv4（`198.18.0.1/16`）与 IPv6（`fc00::/18`）段：AAAA 返回 fake IPv6，域名规则对 IPv6 连接同样生效；缺少 IPv6 fake 段时 mihomo 1.19.32 会返回空 AAAA。IP 前缀规则只匹配字面量或自行解析的 IPv6（见[国内 IPv6 直连](#国内-ipv6-直连)）。
 
 代理目标必须是实际节点或能静态核验的策略组，组内不能包含 DIRECT、PASS 等；带动态 `use`/`include-all` 或成员过滤条件的分组无法核验，会明确报错。此时请将要用的实际节点放入 `proxies`，或建立只引用这些节点的静态策略组，再用 `--proxy-name` 指定。不要把带节点凭据的 `original.yaml`、`protected.yaml` 提交到公开仓库。
 
@@ -67,7 +80,7 @@ Clash 的每个配置都有**扩展（Extend）**，其中“脚本”模式会�
 | 项目 | Clash 位置 | 目标值 | 说明 |
 | --- | --- | --- | --- |
 | 出站模式 | 仪表盘 | **规则** | Clash 用应用级 `mode` 覆盖脚本；该值本来就应保持规则模式 |
-| IPv6 | 工具 → 常规 → 内核 | **关闭** | 覆盖脚本的 `ipv6: false`；Android 在进阶配置 → 网络 → VPN 中关闭 IPv6 |
+| IPv6 | 工具 → 常规 → 内核 | **开启** | 覆盖脚本的 `ipv6: true`；Android 在进阶配置 → 网络 → VPN 中开启 IPv6。关闭会让应用覆盖脚本并禁用 IPv6，国内 IPv6 直连随之失效；TUN 也必须保持开启，否则 IPv6 不被接管 |
 | TUN | 仪表盘/网络设置 | **开启**，协议栈 **mixed** | `enable`/`stack` 来自应用设置；`device` 恒为 Clash，`auto-route`/`auto-detect-interface` 被强制为 true |
 | 严格路由 | TUN 设置（若提供） | **开启** | 脚本里的 `strict-route: true` 会保留；不要新增 `strict-route` 覆盖项，其默认值 false 会把 true 覆盖掉 |
 | 绕过私有地址 | 进阶配置 → 网络 → 虚拟网卡 | **关闭** | 默认开启会向 `route-exclude-address` 追加 `0.0.0.0/8`、`224.0.0.0/4`、`fc00::/7` 等，超出项目清单 |
@@ -89,7 +102,7 @@ python3 build_clash.py --check    # 生成物与当前路由不一致时失败
 python3 -m unittest discover -s tests -v
 ```
 
-`tests/test_clash_extend.py` 用 Node 近似 Clash 的 QuickJS `main(config)` 契约（V8 而非 QuickJS，只覆盖脚本使用的语言子集）执行脚本：静态订阅与 `merge_config` 做整字典比较，节点/provider 订阅校验完整规则序列、目标、provider 合并、幂等和报错路径。修改 `Leora-ProxyRules.conf` 或 Clash 路由后，GitHub Actions 会同时刷新 YAML 与脚本；CI 在重新生成前先运行 `build_clash.py --check`，提交了过期脚本会失败。
+`tests/test_clash_extend.py` 用 Node 近似 Clash 的 QuickJS `main(config)` 契约（V8 而非 QuickJS，只覆盖脚本使用的语言子集）执行脚本：静态订阅与 `merge_config` 做整字典比较，节点/provider 订阅校验完整规则序列、目标、provider 合并、幂等和报错路径。修改 `Leora-ProxyRules.conf` 或 Clash 路由后，GitHub Actions 会同时刷新 YAML 与脚本；CI 在重新生成前先运行 `build_clash.py --check`，提交了过期脚本会失败。Action 另有每日定时任务，重新拉取远程列表（含国内 IPv6 前缀列表）并提交 `providers/` 下刷新后的 provider，无需手动触发。
 
 ## Xray
 
@@ -106,9 +119,9 @@ python3 merge_xray.py --input original.json --output protected.json --proxy-bala
 
 脚本保留节点、传输和 balancer，替换 DNS 与公共路由。顺序为 API 专用规则、内部 DNS 出口及接管、本地绕过、隐私规则、Shadowrocket 完整分流顺序。目标出口、balancer 候选及 `fallbackTag` 不能指向 freedom 直连等非代理出口。启用防护时拒绝带自定义路由脚本的叠加层，避免脚本覆盖防护。不要把含节点凭据的输入/输出文件上传公开仓库。
 
-**JSON 路由不会自动安装 TUN 或接管系统 UDP。** 在客户端开启 VPN/TUN，允许 UDP 转发，确认 IPv6 被接管；客户端无法接管 IPv6 时，应在系统/网络层禁用或阻断 IPv6，不能只依靠 DNS 禁止 AAAA。关闭应用绕过/绕过大陆/自动直连回退，配置代理故障时阻断连接。客户端停止后如需继续阻断，也需客户端或操作系统的 kill switch；这些不由路由 JSON 提供。
+**JSON 路由不会自动安装 TUN 或接管系统 UDP。** 在客户端开启 VPN/TUN，允许 UDP 转发，确认 IPv4 与 IPv6 均被接管；客户端无法接管 IPv6 时，应在系统/网络层禁用或阻断 IPv6，不能只依靠 DNS 策略。关闭应用绕过/绕过大陆/自动直连回退，配置代理故障时阻断连接。客户端停止后如需继续阻断，也需客户端或操作系统的 kill switch；这些不由路由 JSON 提供。
 
-合并器会用同步 DNS 策略替换原 `dns`，并添加 `leora-dns-out` DNS 出站。已进入核心的传统 TCP/UDP 53 查询被导入内置 DNS；专用 DNS 的内部查询以 `leora-dns` 标签直连固定解析器，其他解析使用经代理的 DoH。公网 DoH 的内部查询显式强制走代理，不会被 China 等直连规则覆盖；未获准的内部 DNS 目的地拒绝，代理故障不使用直连或系统 DNS。为避免代理域名解析循环，合并器为 `servers`/`vnext` 中的公网节点域名添加精确匹配的 `https://223.5.5.5/dns-query` 加密直连引导；校园/尾网节点域名继续使用专用 DNS。这类引导查询不提供代理隐藏。`leora-dns` 和 `leora-bootstrap` 是保留的内部标签，不能用于普通流量入站。直连出口使用内置 DNS；除校园/尾网专用策略与节点引导外，Xray 普通域名查询统一通过代理 DoH，比 Shadowrocket 允许的直连 DNS 范围更窄。两端按源配置关闭 DNS AAAA；Mihomo 同时关闭顶层 IPv6，不再配置 IPv6 TUN 地址；Xray 直连解析使用 `ForceIPv4`，解析失败不退回系统解析器。DNS 不返回 AAAA 不等于阻断字面量 IPv6，Xray 没有等价的全局 IPv6 开关，外部客户端必须阻断未接管的 IPv6。Xray 26.3.27 内置 DNS 处理 A/AAAA，其他记录类型明确拒绝；Tailscale 原生 DNS 的查询应通过系统本地路由访问 Quad100，可保留其其他记录类型能力。应用自带 DoH（443 或其他端口）不会被 53 接管；将浏览器安全 DNS 关闭以使用代理 DNS，或配置为同一受控 DoH 并验证其出口。标准 853 端口的 DoT/DoQ 被阻断，其他端口不保证覆盖。
+合并器会用同步 DNS 策略替换原 `dns`，并添加 `leora-dns-out` DNS 出站。已进入核心的传统 TCP/UDP 53 查询被导入内置 DNS；专用 DNS 的内部查询以 `leora-dns` 标签直连固定解析器，其他解析使用经代理的 DoH。公网 DoH 的内部查询显式强制走代理，不会被 China 等直连规则覆盖；未获准的内部 DNS 目的地拒绝，代理故障不使用直连或系统 DNS。为避免代理域名解析循环，合并器为 `servers`/`vnext` 中的公网节点域名添加精确匹配的 `https://223.5.5.5/dns-query` 加密直连引导；校园/尾网节点域名继续使用专用 DNS。这类引导查询不提供代理隐藏。`leora-dns` 和 `leora-bootstrap` 是保留的内部标签，不能用于普通流量入站。直连出口使用内置 DNS；除校园/尾网专用策略与节点引导外，Xray 普通域名查询统一通过代理 DoH，比 Shadowrocket 允许的直连 DNS 范围更窄。两端按源配置启用 IPv6：Mihomo 顶层 `ipv6` 与 `dns.ipv6` 为 true，并配置 IPv6 TUN 地址；Xray DNS `queryStrategy` 与直连出口均为 `UseIP`，解析失败不退回系统解析器。Xray 没有等价的全局 IPv6 开关，外部客户端必须自己接管 IPv6。大陆 IPv6 前缀由新增的 ipcidr DIRECT 规则集匹配，其余 IPv6 目标不命中直连规则、最终走代理；Mihomo 的域名连接走 fake-IP 域名规则（见[国内 IPv6 直连](#国内-ipv6-直连)）。Xray 26.3.27 内置 DNS 处理 A/AAAA，其他记录类型明确拒绝；Tailscale 原生 DNS 的查询应通过系统本地路由访问 Quad100，可保留其其他记录类型能力。应用自带 DoH（443 或其他端口）不会被 53 接管；将浏览器安全 DNS 关闭以使用代理 DNS，或配置为同一受控 DoH 并验证其出口。标准 853 端口的 DoT/DoQ 被阻断，其他端口不保证覆盖。
 
 主 JSON 已包含广告拒绝、Steam 例外及防护规则，不再提供纯防护或无防护模板。
 
@@ -128,7 +141,7 @@ python3 merge_xray.py --input original.json --output protected.json --proxy-bala
 
 Mihomo 使用 `nameserver-policy`，Xray 使用 `servers.domains`，专用 DNS 无记录/失败时不转给公共解析器。校园域名访问本地直连以使用校园网络或校园 VPN；解析器不从公网可达时，这些域名会解析失败，这是预期边界。
 
-Tailscale 使用 `100.64.0.0/10` 和 `fd7a:115c:a1e0::/48`。三端保留本地直连；Shadowrocket 保留原 IPv4 TUN 排除，并加入 IPv6 直连规则（iOS 实际接管行为仍需客户端验证）；Mihomo 按源配置保留 IPv4 TUN 排除，并对 `ts.net` 排除 fake-IP。源配置保留的尾网 IPv6 DIRECT 规则也同步，但禁用 IPv6 时不能承诺核心内尾网 IPv6 可用，应优先使用尾网 IPv4。Xray JSON 无法修改外部客户端的 TUN 路由，需在客户端同步源配置的 `tun-excluded-routes`。不要把整个 UDP 或任意公网范围加入直连例外。
+Tailscale 使用 `100.64.0.0/10` 和 `fd7a:115c:a1e0::/48`。三端保留本地直连；Shadowrocket 的 `tun-excluded-routes` 与 Mihomo 的 `route-exclude-address` 现在同时包含这两个尾网网段（IPv4 与 IPv6），否则启用 IPv6 后 TUN 会接管尾网 IPv6，`leora-mc` 这类主机就不再直连；Mihomo 还对 `ts.net` 排除 fake-IP。源配置保留的尾网 IPv6 DIRECT 规则也同步，核心内尾网 IPv6 依赖系统路由与 Tailscale 接口实际可达，优先使用尾网 IPv4。Xray JSON 无法修改外部客户端的 TUN 路由，需在客户端同步源配置的 `tun-excluded-routes`。不要把整个 UDP 或任意公网范围加入直连例外。
 
 这些例外不安装、不启动 Tailscale，不添加操作系统的校园/子网路由。需要 Tailscale 本身运行、MagicDNS 正常，并使用完整的 `设备.尾网.ts.net` 名称；短主机名的搜索域由系统/Tailscale 管理。不要强制将本地 DNS/服务绑定到不支持相应路由的物理网卡。TUN 排除表示交由系统路由，不表示在没有 Tailscale 的机器上也能访问尾网。
 
@@ -209,7 +222,7 @@ Action 使用固定版本且校验 SHA-256 的官方核心，运行上述全部�
 
 | 源设置 | Mihomo | Xray JSON |
 | --- | --- | --- |
-| `ipv6=false`、`prefer-ipv6=false` | 顶层和 DNS 均为 false，不配置 IPv6 TUN 地址 | DNS `UseIPv4`，合并后的直连出口 `ForceIPv4`；无全局 IPv6 开关 |
+| `ipv6=true`、`prefer-ipv6=false` | 顶层和 DNS 均为 true，配置 IPv6 TUN 地址与 `fake-ip-range6: fc00::/18`；大陆 IPv6 前缀经 ipcidr provider 匹配 DIRECT（域名连接走 fake-IP 域名规则） | DNS `UseIP`，合并后的直连出口 `UseIP`；无全局 IPv6 开关 |
 | 公共 DNS、备用 DNS | 两个代理 DoH | 两个经路由强制代理的 DoH；两种内核的选择/备用时序不完全相同 |
 | 直连 DNS、不用系统 DNS、不回退代理 | 指定直连 DoH，无系统回退 | 无按出站选择 DNS 的同等开关；普通域名继续代理 DoH，专用域名用指定 DNS |
 | `skip-proxy`、`tun-excluded-routes` | 从源值生成精确/通配域名及 IP 规则，TUN 排除同步 | 同步 DIRECT 规则；系统代理绕过和 TUN 排除由外部客户端设置 |
@@ -220,4 +233,4 @@ Action 使用固定版本且校验 SHA-256 的官方核心，运行上述全部�
 | UDP 不支持时 REJECT | 对应代理规则后加入 UDP 拒绝，防止落入 DIRECT | 代理出错不回退 DIRECT |
 | STUN IPv4/IPv6 响应伪装 | 不再伪造；STUN 跟随路由，直连放行、代理目标 UDP 兜底 | 不再伪造；STUN 跟随路由，直连放行、代理目标不回退 DIRECT |
 
-IPv6 设置不会修改操作系统网络栈，也不改写订阅中显式指定的 IPv6 节点地址。若需要整台设备禁用 IPv6，须在系统或客户端落实并实测。字段依据：[Mihomo 全局配置](https://wiki.metacubex.one/config/general/)、[Mihomo DNS](https://wiki.metacubex.one/config/dns/)、[Xray 26.3.27 Freedom 实现](https://github.com/XTLS/Xray-core/blob/v26.3.27/infra/conf/freedom.go)。
+IPv6 设置不会修改操作系统网络栈，也不改写订阅中显式指定的 IPv6 节点地址。Mihomo 的 `fake-ip-range6` 是实现细节（源配置没有对应 General 选项），回退时随 `ipv6=false` 自动移除。回退到旧行为须把 `ipv6` 改回 `false` 并重新运行生成器，同时关闭客户端应用层的 IPv6 开关；`prefer-ipv6` 是固定值，改动会被审计拒绝。若需要整台设备禁用 IPv6，须在系统或客户端落实并实测。字段依据：[Mihomo 全局配置](https://wiki.metacubex.one/config/general/)、[Mihomo DNS](https://wiki.metacubex.one/config/dns/)、[Xray 26.3.27 Freedom 实现](https://github.com/XTLS/Xray-core/blob/v26.3.27/infra/conf/freedom.go)。

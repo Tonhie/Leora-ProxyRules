@@ -31,6 +31,11 @@ def split_dns():
     return result
 
 
+# Mihomo fake-IP mode returns an empty AAAA answer when no IPv6 pool exists
+# (v1.19.32 dns/middleware.go withFakeIP). Keep a distinct ULA pool so IPv6
+# domain traffic is resolved as a fake address instead of being dropped.
+FAKE_IP_RANGE6 = 'fc00::/18'
+
 BOOTSTRAP_TAG = 'leora-bootstrap'
 BOOTSTRAP_DOH = 'https://223.5.5.5/dns-query'
 
@@ -51,8 +56,8 @@ GENERAL_MAPPING = {
     'dns-direct-system': 'No system DNS fallback',
     'dns-direct-fallback-proxy': 'Mihomo direct resolver only; Xray per-outbound DNS distinction unavailable',
     'use-local-host-item-for-proxy': 'No system hosts; static Host entries shared by both engines, no per-proxy Host toggle',
-    'ipv6': 'Mihomo global/DNS IPv6; Xray IPv4 DNS and ForceIPv4 direct dialing; client must prevent uncaptured IPv6',
-    'prefer-ipv6': 'IPv4 only while IPv6 disabled; IPv6 preference mode unsupported',
+    'ipv6': 'Mihomo global/DNS IPv6 and TUN IPv6 address; Xray UseIP DNS/direct dialing; mainland-China IPv6 prefixes match DIRECT rule sets; client must keep TUN capturing IPv6',
+    'prefer-ipv6': 'IPv4 preferred while AAAA is still returned; IPv6-preference mode unsupported',
     'udp-policy-not-supported-behaviour': 'Mihomo adjacent UDP REJECT guards; Xray proxy errors without DIRECT fallback',
     'private-ip-answer': 'Private split DNS answers accepted',
     'bypass-system': 'No generated system-service bypass; external client capture must be verified',
@@ -269,6 +274,7 @@ def mihomo_settings():
         'dns': {'enable': True, 'ipv6': ipv6_enabled(), 'respect-rules': True,
                 'use-system-hosts': False, 'direct-nameserver-follow-policy': True,
                 'enhanced-mode': 'fake-ip', 'fake-ip-range': '198.18.0.1/16',
+                **({'fake-ip-range6': FAKE_IP_RANGE6} if ipv6_enabled() else {}),
                 'fake-ip-filter': ['+.' + d for d in split_dns()],
                 'nameserver-policy': {'+.' + d: 'udp://' + ip + '#DIRECT' for d, ip in split_dns().items()},
                 'default-nameserver': [BOOTSTRAP_DOH],
