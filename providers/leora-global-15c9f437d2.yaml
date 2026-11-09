@@ -56,6 +56,9 @@ payload:
 - DOMAIN,apple.comscoreresearch.com
 - DOMAIN,appleworldwidedeveloper.hb-api.omtrdc.net
 - DOMAIN,appleworldwidedeveloper.sc.omtrdc.net
+- DOMAIN,appsgenaiserver-pa.clients.google.com
+- DOMAIN,appsgenaiserver-pa.clients6.google.com
+- DOMAIN,appsgenaiserver-pa.googleapis.com
 - DOMAIN,as-dash-uk-live.akamaized.net
 - DOMAIN,as-hls-uk-live.akamaized.net
 - DOMAIN,asahishimbun.sc.omtrdc.net
@@ -172,6 +175,8 @@ payload:
 - DOMAIN,databank.worldbank.org
 - DOMAIN,database.asahi.com
 - DOMAIN,datarouter.apps.netherrealm.com
+- DOMAIN,dc.applicationinsights.azure.com
+- DOMAIN,dc.services.visualstudio.com
 - DOMAIN,dcb0z5ovq92mz.cloudfront.net
 - DOMAIN,ddacn6pr5v0tl.cloudfront.net
 - DOMAIN,ddpjwstwtpszg.cloudfront.net
@@ -195,6 +200,7 @@ payload:
 - DOMAIN,doy2mn9upadnk.cloudfront.net
 - DOMAIN,dqd0jw5gvbchn.cloudfront.net
 - DOMAIN,dqrpb9wgowsf5.cloudfront.net
+- DOMAIN,dropbox.zendesk.com
 - DOMAIN,ds-linear-abematv.akamaized.net
 - DOMAIN,ds-vod-abematv.akamaized.net
 - DOMAIN,ds0h3roq6wcgc.cloudfront.net
@@ -299,6 +305,7 @@ payload:
 - DOMAIN,link.theplatform.com
 - DOMAIN,linkedin.sc.omtrdc.net
 - DOMAIN,live-patreon-marketing.pantheonsite.io
+- DOMAIN,live.applicationinsights.azure.com
 - DOMAIN,lm.licenses.adobe.com
 - DOMAIN,lmlicenses.wip4.adobe.com
 - DOMAIN,lolstatic-a.akamaihd.net
@@ -324,7 +331,6 @@ payload:
 - DOMAIN,na1r.services.adobe.com
 - DOMAIN,nationalaustraliaban.tt.omtrdc.net
 - DOMAIN,nbbb1bb7.pmhcjk.com
-- DOMAIN,netflix.com.edgesuite.net
 - DOMAIN,news-assets.apple.com
 - DOMAIN,news-client-search.apple.com
 - DOMAIN,news-client.apple.com
@@ -453,6 +459,7 @@ payload:
 - DOMAIN,rsshub.umzzz.com
 - DOMAIN,rsshub.woodland.cafe
 - DOMAIN,rsshub2.asailor.org
+- DOMAIN,rt.services.visualstudio.com
 - DOMAIN,rtm.tnt-ea.com
 - DOMAIN,s3-ap-northeast-1.amazonaws.com
 - DOMAIN,s3-ap-southeast-2.amazonaws.com
@@ -539,7 +546,6 @@ payload:
 - DOMAIN,servd-anthropic-website.b-cdn.net
 - DOMAIN,sni1dcb6gl.wpc.edgecastcdn.net
 - DOMAIN,spectator.ppy.sh
-- DOMAIN,spotify.com.edgesuite.net
 - DOMAIN,spotify.map.fastly.net
 - DOMAIN,spotify.map.fastlylb.net
 - DOMAIN,ssl-lvlt.cdn.ea.com
@@ -7458,6 +7464,7 @@ payload:
 - DOMAIN-SUFFIX,dasaob.online
 - DOMAIN-SUFFIX,dasg.ac.uk
 - DOMAIN-SUFFIX,dash-1.ac.uk
+- DOMAIN-SUFFIX,dash.ai
 - DOMAIN-SUFFIX,dashly.app
 - DOMAIN-SUFFIX,dashly.help
 - DOMAIN-SUFFIX,dashly.io
@@ -8259,6 +8266,7 @@ payload:
 - DOMAIN-SUFFIX,docs.com
 - DOMAIN-SUFFIX,docs.rs
 - DOMAIN-SUFFIX,docs.rw
+- DOMAIN-SUFFIX,docsend.com
 - DOMAIN-SUFFIX,doctor-videos.com
 - DOMAIN-SUFFIX,documentforce.com
 - DOMAIN-SUFFIX,docusend.ac.uk
@@ -12099,9 +12107,11 @@ payload:
 - DOMAIN-SUFFIX,heise360181.buzz
 - DOMAIN-SUFFIX,heise360182.buzz
 - DOMAIN-SUFFIX,helf.ac.uk
+- DOMAIN-SUFFIX,hellofax.com
 - DOMAIN-SUFFIX,hellofuture.ac.uk
 - DOMAIN-SUFFIX,hellokittybeats.com
 - DOMAIN-SUFFIX,hellomoto.com
+- DOMAIN-SUFFIX,hellosign.com
 - DOMAIN-SUFFIX,hellosmartbook.com
 - DOMAIN-SUFFIX,hellporno.com
 - DOMAIN-SUFFIX,hellven.net
@@ -15344,6 +15354,7 @@ payload:
 - DOMAIN-SUFFIX,library.lol
 - DOMAIN-SUFFIX,librarylovefest.com
 - DOMAIN-SUFFIX,libraryofthumbs.com
+- DOMAIN-SUFFIX,librewolf.dev
 - DOMAIN-SUFFIX,librewolf.net
 - DOMAIN-SUFFIX,libsolutions.app
 - DOMAIN-SUFFIX,libsolutions.domains

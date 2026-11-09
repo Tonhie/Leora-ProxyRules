@@ -8,6 +8,7 @@ Mihomo/Xray 通过“代理连接，代理不可用时失败”降低真实公�
 
 - Shadowrocket：使用 `Leora-ProxyRules.conf`，保留原有分流和 UDP 不支持时拒绝；不再伪造 STUN 响应，STUN 直连/代理行为跟随路由。
 - Mihomo/Xray：内部 DNS 接管 → 原本地/校园/Tailscale 绕过 → 隐私防护（DoT） → Shadowrocket 完整可转换分流顺序 → 国内 IP 兜底直连。国内/B站/Apple 等继续按源规则直连；Steam 下载直连、商店/社区代理。所有代理规则之后、`MATCH` 之前增加 `GEOIP,CN,DIRECT`，只兜底未被显式列表覆盖的国内 IP（游戏、QUIC/CDN 等），不抢在代理规则前面。China DIRECT 块另加国内 IPv6 前缀直连规则集，其余 IPv6 目标最终落到 `FINAL`/`MATCH` 走代理，详见[国内 IPv6 直连](#国内-ipv6-直连)。
+- 同济内网：`gardilily.com` 及其子域（如 `vesper-center.gardilily.com`）在校园直连块中显式 `DIRECT`。该站点解析到校园私有地址（`10.60.150.234`），代理节点无法访问校园网，经代理必然失败；域名由公网权威 DNS 直接返回真实内网地址，因此不加入 `[Host]` 专用 DNS。离开校园网且未连校园 VPN 时直连失败属于预期边界。
 - STUN/TURN：不再有全局端口/域名拒绝。STUN 服务按路由决定：直连目标允许，代理目标在同条件 UDP 拒绝兜底处关闭，未匹配 UDP 仍被最后一条 `NETWORK,udp,REJECT` 拒绝。因此国内/直连站点可以拿到真实映射，代理目标不会以真实 IP 直连。
 - 隐私防护：拒绝外部 TCP/UDP `853`，避免应用绕过配置的 DNS 使用 DoT/DoQ；该规则仍在所有国内直连之前全局生效。**STUN 放行会增加浏览器 WebRTC 暴露面**：恶意网页可以利用任意直连 STUN 服务器取得真实公网 IP；因此浏览器侧 WebRTC 限制仍是必须项，路由层不再假装能完全拦截 STUN。
 - Mihomo 在每条 PROXY 规则后保留同条件 UDP 拒绝兜底，节点不支持 UDP 时不落入后面的 DIRECT。Xray 代理出口失败后不会重新匹配直连规则。末尾的 `GEOIP,CN,DIRECT` 位于全部代理规则之后，不会让本应代理的流量提前直连；代理规则后的 UDP 兜底仍只作用于代理命中项。

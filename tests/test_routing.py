@@ -140,6 +140,33 @@ class PolicyTests(unittest.TestCase):
         self.assertNotIn('stun-response-ip', text)
         self.assertIn('udp-policy-not-supported-behaviour = REJECT', text)
 
+    def test_tongji_course_intranet_domain_is_direct_in_every_profile(self):
+        # vesper-center.gardilily.com is a Tongji course-lab service on the campus
+        # network (private 10.60.150.234). Proxied nodes cannot reach it, so it
+        # must stay in the leading local/campus DIRECT block of all profiles.
+        rule = 'DOMAIN-SUFFIX,gardilily.com,DIRECT'
+        source = (ROOT / 'Leora-ProxyRules.conf').read_text(encoding='utf-8')
+        self.assertIn(rule, source)
+        self.assertLess(source.index('DOMAIN-SUFFIX,tongji.edu.cn,DIRECT'), source.index(rule))
+        self.assertLess(source.index(rule), source.index('RULE-SET,'))
+        self.assertLess(source.index(rule), source.index('FINAL,PROXY'))
+
+        m = yaml.safe_load((ROOT / 'Leora-Clash-Routing.yaml').read_text(encoding='utf-8'))
+        rules = m['rules']
+        index = rules.index(rule)
+        first_proxy = next(i for i, r in enumerate(rules) if r.endswith(',PROXY'))
+        self.assertLess(index, first_proxy)
+        # DIRECT rules carry no adjacent UDP reject; only PROXY matches get one.
+        self.assertFalse(rules[index + 1].startswith('AND,((NETWORK,udp)'))
+
+        x = json.loads((ROOT / 'Leora-Xray-Routing.json').read_text(encoding='utf-8'))['routing']['rules']
+        direct = next(i for i, r in enumerate(x) if r.get('domain') == ['domain:gardilily.com'])
+        self.assertEqual(x[direct]['outboundTag'], 'direct')
+        first_xray_proxy = next(i for i, r in enumerate(x)
+                                if r.get('outboundTag') == 'proxy'
+                                and str(r.get('ruleTag', '')).startswith('inline-'))
+        self.assertLess(direct, first_xray_proxy)
+
     def test_published_entries_are_already_protected(self):
         m = yaml.safe_load((ROOT / 'Leora-Clash-Routing.yaml').read_text(encoding='utf-8'))
         x = json.loads((ROOT / 'Leora-Xray-Routing.json').read_text(encoding='utf-8'))

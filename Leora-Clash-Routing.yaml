@@ -443,6 +443,7 @@ rules:
 - DOMAIN-SUFFIX,fudan.edu.cn,DIRECT
 - DOMAIN-SUFFIX,sjtu.edu.cn,DIRECT
 - DOMAIN-SUFFIX,buaa.edu.cn,DIRECT
+- DOMAIN-SUFFIX,gardilily.com,DIRECT
 - RULE-SET,leora-sr-ad-only-1cbf568bcf,REJECT
 - RULE-SET,leora-banad-21086c1183,REJECT
 - RULE-SET,leora-reject-special-d65453ba7b,REJECT

@@ -1,6 +1,5 @@
 payload:
 - DOMAIN,apps.apple.com
-- DOMAIN,itunes.apple.com
 - DOMAIN,a1.mzstatic.com
 - DOMAIN,a2.mzstatic.com
 - DOMAIN,a3.mzstatic.com
@@ -236,6 +235,7 @@ payload:
 - DOMAIN,docs-assets.developer.apple.com
 - DOMAIN,hls-svod.itunes.apple.com
 - DOMAIN,hls.itunes.apple.com
+- DOMAIN,itunes.apple.com
 - DOMAIN,js-cdn.music.apple.com
 - DOMAIN,lookup-api.apple.com
 - DOMAIN,mask-api.fe.apple-dns.net
@@ -251,6 +251,7 @@ payload:
 - DOMAIN,np-edge.itunes.apple.com
 - DOMAIN,play-edge.itunes.apple.com
 - DOMAIN,sandbox.itunes.apple.com
+- DOMAIN,testflight.apple.com
 - DOMAIN,tv.applemusic.com
 - DOMAIN,uts-api.itunes.apple.com
 - DOMAIN,hls-amt.itunes.apple.com
@@ -260,7 +261,6 @@ payload:
 - DOMAIN,amp-api.fitness.apple.com
 - DOMAIN,guzzoni.apple.com
 - DOMAIN,beta.apple.com
-- DOMAIN,testflight.apple.com
 - DOMAIN,www-cdn.icloud.com.akadns.net
 - DOMAIN-REGEX,^.*\-content\.icloud\.com\.cn$
 - DOMAIN-REGEX,^apple\..*$
