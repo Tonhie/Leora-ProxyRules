@@ -72,6 +72,8 @@ Clash 的每个配置都有**扩展（Extend）**，其中“脚本”模式会�
 3. 退出扩展页后 Clash 会自动重新应用；可在配置菜单的 **预览** 中确认规则、DNS 和 `leora-dns-out` 已出现。
 4. 刷新订阅不会覆盖脚本；脚本会在每次应用配置时重新执行。
 
+**常见错误：** 若在这里导入的是 `*-ProxyRules.conf`（Shadowrocket 远程配置）或其它以 `#` 开头的文本，QuickJS 会报 `invalid first character of private name at eval_script:1:1`——`.conf` 第一行是 `#` 注释，被 JS 解析器当成私有字段名。Clash/FlClash 的脚本槽只能导入 `Leora-Clash-Extend.js` 或 `Umbra-Clash-Extend.js`；小火箭的 `.conf` 要加在它自己的「配置」里。
+
 ### 脚本做了什么
 
 - 规则序列与所选模式的 `Leora-Clash-Routing.yaml` 或 `Umbra-Clash-Routing.yaml` 逐条一致：本地/校园/Tailscale 直连、DNS 接管、DoT 拦截、广告拒绝、Steam 下载直连、完整来源顺序和每条代理规则后的 UDP 拒绝兜底；`MATCH` 和 `#PROXY` 会替换为实际目标。当规则目标能在静态节点/策略组上核验时，输出与 `merge_mihomo.py` 的结果相同；节点或 provider 订阅由脚本自建目标，`merge_mihomo` 无法校验该目标，但规则内容与兜底仍相同。

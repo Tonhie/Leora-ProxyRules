@@ -20,6 +20,8 @@ IPv6 在两种模式下都保持 fail-closed：国内 IPv6 前缀直连，其余
 | Xray | Leora 白名单 | [Leora-Xray-Routing.json](https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/Leora-Xray-Routing.json) | 合并到完整 Xray 配置 |
 | Xray | Umbra 黑名单 | [Umbra-Xray-Routing.json](https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/Umbra-Xray-Routing.json) | 合并到完整 Xray 配置 |
 
+**别把文件槽位搞混：** `*-ProxyRules.conf` 是 Shadowrocket 的远程配置，只能加在「配置 → 远程配置」里；`*-Clash-Extend.js` 才是给 Clash/FlClash 的扩展脚本。若把 `.conf` 贴进 JS/脚本槽，QuickJS 会报 `invalid first character of private name at eval_script:1:1`——因为 `.conf` 第一行是 `#` 注释，被当成私有字段语法；换成对应的 `.js` 即可。
+
 ```bash
 python3 -m pip install -r requirements.txt
 python3 merge_mihomo.py --mode leora --input original.yaml --output protected.yaml
