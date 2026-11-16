@@ -6,6 +6,12 @@
  *
  * Clash: Tools -> Advanced configuration -> Scripts -> import this file
  * (from URL or file), then Profile -> ... -> Extend -> Extend mode: Script.
+ * FlClash: profile -> Extend -> Extend mode: Script; import this .js from URL
+ * or file in the script library ("go to configure script"), then pick it for
+ * the profile. Import only this file: the Shadowrocket *-ProxyRules.conf and
+ * the Mihomo *-Clash-Routing.yaml are not scripts (FlClash would fail with
+ * "invalid first character of private name at eval_script:1:1" for the .conf,
+ * or a YAML parse error for the .yaml).
  * The subscription's proxies, proxy groups and proxy-providers are kept; mode,
  * IPv6, hosts, DNS, TUN, rule-providers and rules are replaced by the canonical
  * Leora set. The rule target is the subscription's own proxy policy group.

@@ -64,15 +64,32 @@ Clash 的每个配置都有**扩展（Extend）**，其中“脚本”模式会�
 
 ### 导入与绑定
 
-1. Clash → **工具 → 进阶配置 → 脚本** → 右上角添加 → **从 URL 导入** 或 **从文件导入**：
+1. 打开脚本库 → 右上角添加 → **从 URL 导入** 或 **从文件导入**：
+   - Clash（Verge/Meta 等）：**工具 → 进阶配置 → 脚本**。
+   - FlClash：配置的扩展页 → **前往配置脚本**（进阶配置里的脚本库）。
    - 白名单 URL：`https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/Leora-Clash-Extend.js`
    - 黑名单 URL：`https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/Umbra-Clash-Extend.js`
-   - 文件：仓库中的 `Leora-Clash-Extend.js` 或 `Umbra-Clash-Extend.js`
-2. **配置** → 目标配置右侧菜单 → **扩展（Extend）** → 扩展模式选 **脚本** → 选中对应模式的脚本。
-3. 退出扩展页后 Clash 会自动重新应用；可在配置菜单的 **预览** 中确认规则、DNS 和 `leora-dns-out` 已出现。
+   - 文件：仓库中的 `Leora-Clash-Extend.js` 或 `Umbra-Clash-Extend.js`。**只导入这两个 `.js`。**
+2. **配置** → 目标配置右侧菜单（FlClash 为配置详情） → **扩展（Extend）** → 扩展模式选 **脚本** → 选中对应模式的脚本。扩展脚本按配置独立绑定：**Umbra 配置选 `Umbra-Clash-Extend`，Leora 配置选 `Leora-Clash-Extend`**；选成另一版不会报错，只会静默得到另一套规则。
+3. 退出扩展页后 Clash/FlClash 会自动重新应用；可在配置菜单的 **预览** 中确认规则、DNS 和 `leora-dns-out` 已出现。
 4. 刷新订阅不会覆盖脚本；脚本会在每次应用配置时重新执行。
+5. 导入前建议先自检下载到的文件（`--expect-mode` 检查是否选错模式）：
+   ```bash
+   python3 tools/check_extend_script.py Umbra-Clash-Extend.js --expect-mode umbra
+   ```
+   检查器会识别 `.conf`/`.yaml`/`.json`/`.js`，对不是扩展脚本的文件给出对应的正确用法。
 
-**常见错误：** 若在这里导入的是 `*-ProxyRules.conf`（Shadowrocket 远程配置）或其它以 `#` 开头的文本，QuickJS 会报 `invalid first character of private name at eval_script:1:1`——`.conf` 第一行是 `#` 注释，被 JS 解析器当成私有字段名。Clash/FlClash 的脚本槽只能导入 `Leora-Clash-Extend.js` 或 `Umbra-Clash-Extend.js`；小火箭的 `.conf` 要加在它自己的「配置」里。
+**常见错误与排查：**
+
+| 现象 | 原因 | 处理 |
+| --- | --- | --- |
+| `invalid first character of private name at eval_script:1:1` | 导入的是 `*-ProxyRules.conf`（Shadowrocket 远程配置）或其它以 `#` 开头的文本；`.conf` 第一行是 `#` 注释，被 QuickJS 当成私有字段名 | 换成对应模式的 `*-Clash-Extend.js`；小火箭的 `.conf` 留在它自己的「配置 → 远程配置」 |
+| `script does not define main()` | 导入的 `.js` 没有 `function main(config)`（例如片段脚本或改坏的副本） | 重新导入仓库生成的 `*-Clash-Extend.js`，不要手改 |
+| 配置无法加载、报 JSON/YAML 解析错误 | 把 `*-Clash-Routing.yaml`（完整 Mihomo 配置）或 `*-Xray-Routing.json` 放进了脚本槽 | 脚本槽只放 `.js`；YAML/JSON 走各自的配置合并流程 |
+| 扩展正常应用，但规则和预览对不上（Umbra 配置出现 `MATCH,Leora-Proxy`、`NETWORK,udp,REJECT`） | 该配置的扩展里选的是 **另一个模式** 的脚本，或仍指向旧脚本 | 在该配置的扩展 → 脚本里改选对应模式的 `*-Clash-Extend`；用 `python3 tools/check_extend_script.py <文件> --expect-mode umbra` 先核对文件 |
+| `当前订阅没有可用代理节点，无法应用 Leora/Umbra 规则` | 订阅既没有可用真实节点，也没有非空 `proxy-providers` | 换含节点/节点的订阅，或在客户端补 provider；脚本不会回落到直连 |
+
+Clash/FlClash 的脚本槽只能导入 `Leora-Clash-Extend.js` 或 `Umbra-Clash-Extend.js`。导入前运行 `python3 tools/check_extend_script.py <文件>` 可提前识别文件类型和模式，避免把 `.conf`/`.yaml` 当成脚本。
 
 ### 脚本做了什么
 

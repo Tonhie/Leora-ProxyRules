@@ -15,12 +15,12 @@ IPv6 在两种模式下都保持 fail-closed：国内 IPv6 前缀直连，其余
 | Shadowrocket | Umbra 黑名单 | [Umbra-ProxyRules.conf](https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/Umbra-ProxyRules.conf) | 添加远程配置，下载并选中 |
 | Mihomo | Leora 白名单 | [Leora-Clash-Routing.yaml](https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/Leora-Clash-Routing.yaml) | 与现有节点配置合并，含 DNS/TUN 设置 |
 | Mihomo | Umbra 黑名单 | [Umbra-Clash-Routing.yaml](https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/Umbra-Clash-Routing.yaml) | 与现有节点配置合并，含 DNS/TUN 设置 |
-| Clash | Leora 白名单 | [Leora-Clash-Extend.js](https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/Leora-Clash-Extend.js) | 工具 → 进阶配置 → 脚本导入；扩展切到脚本模式并选中 |
-| Clash | Umbra 黑名单 | [Umbra-Clash-Extend.js](https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/Umbra-Clash-Extend.js) | 工具 → 进阶配置 → 脚本导入；扩展切到脚本模式并选中 |
+| Clash / FlClash | Leora 白名单 | [Leora-Clash-Extend.js](https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/Leora-Clash-Extend.js) | 脚本库 → 从 URL/文件导入；目标配置的扩展（Extend）切到脚本模式并选中。FlClash 的脚本库入口是配置扩展页的「前往配置脚本」 |
+| Clash / FlClash | Umbra 黑名单 | [Umbra-Clash-Extend.js](https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/Umbra-Clash-Extend.js) | 脚本库 → 从 URL/文件导入；目标配置的扩展（Extend）切到脚本模式并选中。Umbra 配置必须选 Umbra 脚本 |
 | Xray | Leora 白名单 | [Leora-Xray-Routing.json](https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/Leora-Xray-Routing.json) | 合并到完整 Xray 配置 |
 | Xray | Umbra 黑名单 | [Umbra-Xray-Routing.json](https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/Umbra-Xray-Routing.json) | 合并到完整 Xray 配置 |
 
-**别把文件槽位搞混：** `*-ProxyRules.conf` 是 Shadowrocket 的远程配置，只能加在「配置 → 远程配置」里；`*-Clash-Extend.js` 才是给 Clash/FlClash 的扩展脚本。若把 `.conf` 贴进 JS/脚本槽，QuickJS 会报 `invalid first character of private name at eval_script:1:1`——因为 `.conf` 第一行是 `#` 注释，被当成私有字段语法；换成对应的 `.js` 即可。
+**别把文件槽位搞混：** `*-ProxyRules.conf` 是 Shadowrocket 的远程配置，只能加在「配置 → 远程配置」里；`*-Clash-Extend.js` 才是给 Clash/FlClash 的扩展脚本。若把 `.conf` 贴进 JS/脚本槽，QuickJS 会报 `invalid first character of private name at eval_script:1:1`——因为 `.conf` 第一行是 `#` 注释，被当成私有字段语法；换成对应的 `.js` 即可。导入前可先运行 `python3 tools/check_extend_script.py <文件> [--expect-mode umbra]` 自检：它会识别 `.conf`/`.yaml`/`.json`/`.js` 并给出对应用法，`--expect-mode` 还能抓出「Umbra 配置选了 Leora 脚本」这类不报错但规则静默走错的问题（FlClash 每个配置的扩展脚本是独立绑定的）。
 
 ```bash
 python3 -m pip install -r requirements.txt
