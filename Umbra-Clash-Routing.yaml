@@ -1,0 +1,548 @@
+mode: rule
+ipv6: true
+hosts:
+  localhost: 127.0.0.1
+tun:
+  enable: true
+  stack: mixed
+  auto-route: true
+  auto-detect-interface: true
+  strict-route: true
+  inet6-address:
+  - fdfe:dcba:9876::1/126
+  dns-hijack:
+  - any:53
+  - tcp://any:53
+  route-exclude-address:
+  - 10.0.0.0/8
+  - 100.64.0.0/10
+  - 127.0.0.0/8
+  - 169.254.0.0/16
+  - 172.16.0.0/12
+  - 192.168.0.0/16
+  - fd7a:115c:a1e0::/48
+dns:
+  enable: true
+  ipv6: true
+  respect-rules: true
+  use-system-hosts: false
+  direct-nameserver-follow-policy: true
+  enhanced-mode: fake-ip
+  fake-ip-range: 198.18.0.1/16
+  fake-ip-range6: fc00::/18
+  fake-ip-filter:
+  - +.ts.net
+  - +.tongji.edu.cn
+  - +.tsinghua.edu.cn
+  - +.pku.edu.cn
+  - +.fudan.edu.cn
+  - +.sjtu.edu.cn
+  - +.buaa.edu.cn
+  nameserver-policy:
+    +.ts.net: udp://100.100.100.100#DIRECT
+    +.tongji.edu.cn: udp://202.120.190.208#DIRECT
+    +.tsinghua.edu.cn: udp://166.111.8.28#DIRECT
+    +.pku.edu.cn: udp://162.105.129.122#DIRECT
+    +.fudan.edu.cn: udp://202.120.224.26#DIRECT
+    +.sjtu.edu.cn: udp://202.120.2.100#DIRECT
+    +.buaa.edu.cn: udp://202.112.128.51#DIRECT
+  default-nameserver:
+  - https://223.5.5.5/dns-query
+  proxy-server-nameserver:
+  - https://223.5.5.5/dns-query#DIRECT
+  proxy-server-nameserver-policy:
+    +.ts.net: udp://100.100.100.100#DIRECT
+    +.tongji.edu.cn: udp://202.120.190.208#DIRECT
+    +.tsinghua.edu.cn: udp://166.111.8.28#DIRECT
+    +.pku.edu.cn: udp://162.105.129.122#DIRECT
+    +.fudan.edu.cn: udp://202.120.224.26#DIRECT
+    +.sjtu.edu.cn: udp://202.120.2.100#DIRECT
+    +.buaa.edu.cn: udp://202.112.128.51#DIRECT
+  direct-nameserver:
+  - https://dns.alidns.com/dns-query#DIRECT
+  nameserver:
+  - https://1.1.1.1/dns-query#PROXY
+  - https://1.0.0.1/dns-query#PROXY
+proxies:
+- name: leora-dns-out
+  type: dns
+rule-providers:
+  leora-sr-ad-only-1cbf568bcf:
+    type: http
+    behavior: classical
+    format: yaml
+    url: https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/providers/leora-sr-ad-only-1cbf568bcf.yaml
+    path: ./ruleset/leora-sr-ad-only-1cbf568bcf.yaml
+    interval: 86400
+  leora-banad-21086c1183:
+    type: http
+    behavior: classical
+    format: text
+    url: https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/BanAD.list
+    path: ./ruleset/leora-banad-21086c1183.text
+    interval: 86400
+  leora-reject-special-d65453ba7b:
+    type: http
+    behavior: classical
+    format: yaml
+    url: https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/providers/leora-reject-special-d65453ba7b.yaml
+    path: ./ruleset/leora-reject-special-d65453ba7b.yaml
+    interval: 86400
+  leora-awavenue-ads-rule-surge-e4e9952865:
+    type: http
+    behavior: classical
+    format: yaml
+    url: https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/providers/leora-awavenue-ads-rule-surge-e4e9952865.yaml
+    path: ./ruleset/leora-awavenue-ads-rule-surge-e4e9952865.yaml
+    interval: 86400
+  leora-china-a7f043cebf-remote-e17b747d:
+    type: http
+    behavior: classical
+    format: yaml
+    url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/China/China.yaml
+    path: ./ruleset/leora-china-a7f043cebf-remote-e17b747d.yaml
+    interval: 86400
+  leora-china-a7f043cebf-remote-9a83c7c5:
+    type: http
+    behavior: domain
+    format: yaml
+    url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/China/China_Domain.yaml
+    path: ./ruleset/leora-china-a7f043cebf-remote-9a83c7c5.yaml
+    interval: 86400
+  leora-china-a7f043cebf:
+    type: http
+    behavior: classical
+    format: yaml
+    url: https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/providers/leora-china-a7f043cebf.yaml
+    path: ./ruleset/leora-china-a7f043cebf.yaml
+    interval: 86400
+  leora-china-43be850ec4:
+    type: http
+    behavior: classical
+    format: yaml
+    url: https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/providers/leora-china-43be850ec4.yaml
+    path: ./ruleset/leora-china-43be850ec4.yaml
+    interval: 86400
+  leora-china-domain-ea36d95cfc:
+    type: http
+    behavior: classical
+    format: yaml
+    url: https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/providers/leora-china-domain-ea36d95cfc.yaml
+    path: ./ruleset/leora-china-domain-ea36d95cfc.yaml
+    interval: 86400
+  leora-ipv6-cidr6-79e2e3a54f:
+    type: http
+    behavior: ipcidr
+    format: yaml
+    url: https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/providers/leora-ipv6-cidr6-79e2e3a54f.yaml
+    path: ./ruleset/leora-ipv6-cidr6-79e2e3a54f.yaml
+    interval: 86400
+  leora-bilibili-8309ab8776:
+    type: http
+    behavior: classical
+    format: yaml
+    url: https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/providers/leora-bilibili-8309ab8776.yaml
+    path: ./ruleset/leora-bilibili-8309ab8776.yaml
+    interval: 86400
+  leora-epic-6695e1299e:
+    type: http
+    behavior: classical
+    format: yaml
+    url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Epic/Epic.yaml
+    path: ./ruleset/leora-epic-6695e1299e.yaml
+    interval: 86400
+  leora-game-3fda622093:
+    type: http
+    behavior: classical
+    format: text
+    url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/Game/Game.list
+    path: ./ruleset/leora-game-3fda622093.text
+    interval: 86400
+  leora-lan-d856a2051a:
+    type: http
+    behavior: classical
+    format: text
+    url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/Lan/Lan.list
+    path: ./ruleset/leora-lan-d856a2051a.text
+    interval: 86400
+  leora-nintendo-ead1ecd7b1:
+    type: http
+    behavior: classical
+    format: text
+    url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/Nintendo/Nintendo.list
+    path: ./ruleset/leora-nintendo-ead1ecd7b1.text
+    interval: 86400
+  leora-sony-1a1ae98e51:
+    type: http
+    behavior: classical
+    format: yaml
+    url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Sony/Sony.yaml
+    path: ./ruleset/leora-sony-1a1ae98e51.yaml
+    interval: 86400
+  leora-steam-ec23e21d9f:
+    type: http
+    behavior: classical
+    format: text
+    url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/Steam/Steam.list
+    path: ./ruleset/leora-steam-ec23e21d9f.text
+    interval: 86400
+  leora-proxy-ai-9d828d5a6a:
+    type: http
+    behavior: classical
+    format: yaml
+    url: https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/providers/leora-proxy-ai-9d828d5a6a.yaml
+    path: ./ruleset/leora-proxy-ai-9d828d5a6a.yaml
+    interval: 86400
+  leora-applenews-7d0ff56eb0:
+    type: http
+    behavior: classical
+    format: yaml
+    url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/AppleNews/AppleNews.yaml
+    path: ./ruleset/leora-applenews-7d0ff56eb0.yaml
+    interval: 86400
+  leora-ai-d0227fc3de:
+    type: http
+    behavior: classical
+    format: yaml
+    url: https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/providers/leora-ai-d0227fc3de.yaml
+    path: ./ruleset/leora-ai-d0227fc3de.yaml
+    interval: 86400
+  leora-apple-7469ce5ec6:
+    type: http
+    behavior: classical
+    format: yaml
+    url: https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/providers/leora-apple-7469ce5ec6.yaml
+    path: ./ruleset/leora-apple-7469ce5ec6.yaml
+    interval: 86400
+  leora-direct-cdn-4f667db6d3:
+    type: http
+    behavior: classical
+    format: yaml
+    url: https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/providers/leora-direct-cdn-4f667db6d3.yaml
+    path: ./ruleset/leora-direct-cdn-4f667db6d3.yaml
+    interval: 86400
+  leora-proxy-special-1c6977e920:
+    type: http
+    behavior: classical
+    format: text
+    url: https://raw.githubusercontent.com/PaPerseller/chn-iplist/master/ruleset/proxy-special.list
+    path: ./ruleset/leora-proxy-special-1c6977e920.text
+    interval: 86400
+  leora-global-15c9f437d2:
+    type: http
+    behavior: classical
+    format: yaml
+    url: https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/providers/leora-global-15c9f437d2.yaml
+    path: ./ruleset/leora-global-15c9f437d2.yaml
+    interval: 86400
+  leora-amazon-f9dd7b4167:
+    type: http
+    behavior: classical
+    format: yaml
+    url: https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/providers/leora-amazon-f9dd7b4167.yaml
+    path: ./ruleset/leora-amazon-f9dd7b4167.yaml
+    interval: 86400
+  leora-disney-00051c20c7:
+    type: http
+    behavior: classical
+    format: yaml
+    url: https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/providers/leora-disney-00051c20c7.yaml
+    path: ./ruleset/leora-disney-00051c20c7.yaml
+    interval: 86400
+  leora-facebook-4db45cdfa1:
+    type: http
+    behavior: classical
+    format: text
+    url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/Facebook/Facebook.list
+    path: ./ruleset/leora-facebook-4db45cdfa1.text
+    interval: 86400
+  leora-github-700b636bf4:
+    type: http
+    behavior: classical
+    format: yaml
+    url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/GitHub/GitHub.yaml
+    path: ./ruleset/leora-github-700b636bf4.yaml
+    interval: 86400
+  leora-google-a0ccdec47e:
+    type: http
+    behavior: classical
+    format: yaml
+    url: https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/providers/leora-google-a0ccdec47e.yaml
+    path: ./ruleset/leora-google-a0ccdec47e.yaml
+    interval: 86400
+  leora-hbo-b177c915a8:
+    type: http
+    behavior: classical
+    format: yaml
+    url: https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/providers/leora-hbo-b177c915a8.yaml
+    path: ./ruleset/leora-hbo-b177c915a8.yaml
+    interval: 86400
+  leora-microsoft-fd9d158cd5:
+    type: http
+    behavior: classical
+    format: yaml
+    url: https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/providers/leora-microsoft-fd9d158cd5.yaml
+    path: ./ruleset/leora-microsoft-fd9d158cd5.yaml
+    interval: 86400
+  leora-netflix-7cf3ac1d9b:
+    type: http
+    behavior: classical
+    format: yaml
+    url: https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/providers/leora-netflix-7cf3ac1d9b.yaml
+    path: ./ruleset/leora-netflix-7cf3ac1d9b.yaml
+    interval: 86400
+  leora-paypal-3399098e28:
+    type: http
+    behavior: classical
+    format: yaml
+    url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/PayPal/PayPal.yaml
+    path: ./ruleset/leora-paypal-3399098e28.yaml
+    interval: 86400
+  leora-proxylite-696b139720:
+    type: http
+    behavior: classical
+    format: yaml
+    url: https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/providers/leora-proxylite-696b139720.yaml
+    path: ./ruleset/leora-proxylite-696b139720.yaml
+    interval: 86400
+  leora-spotify-1b895d3727:
+    type: http
+    behavior: classical
+    format: yaml
+    url: https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/providers/leora-spotify-1b895d3727.yaml
+    path: ./ruleset/leora-spotify-1b895d3727.yaml
+    interval: 86400
+  leora-telegram-4055469d2b:
+    type: http
+    behavior: classical
+    format: text
+    url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/Telegram/Telegram.list
+    path: ./ruleset/leora-telegram-4055469d2b.text
+    interval: 86400
+  leora-tiktok-ffcc7d352b:
+    type: http
+    behavior: classical
+    format: yaml
+    url: https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/providers/leora-tiktok-ffcc7d352b.yaml
+    path: ./ruleset/leora-tiktok-ffcc7d352b.yaml
+    interval: 86400
+  leora-twitter-5acf339a53:
+    type: http
+    behavior: classical
+    format: text
+    url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/Twitter/Twitter.list
+    path: ./ruleset/leora-twitter-5acf339a53.text
+    interval: 86400
+  leora-youtube-c68c98c20b:
+    type: http
+    behavior: classical
+    format: yaml
+    url: https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/providers/leora-youtube-c68c98c20b.yaml
+    path: ./ruleset/leora-youtube-c68c98c20b.yaml
+    interval: 86400
+  leora-apple-a062ee70ad-remote-16e84d32:
+    type: http
+    behavior: domain
+    format: yaml
+    url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Apple/Apple_Domain.yaml
+    path: ./ruleset/leora-apple-a062ee70ad-remote-16e84d32.yaml
+    interval: 86400
+  leora-apple-a062ee70ad:
+    type: http
+    behavior: classical
+    format: yaml
+    url: https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/providers/leora-apple-a062ee70ad.yaml
+    path: ./ruleset/leora-apple-a062ee70ad.yaml
+    interval: 86400
+  leora-wechat-f0a9676e96-remote-fe652502:
+    type: http
+    behavior: classical
+    format: yaml
+    url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/WeChat/WeChat.yaml
+    path: ./ruleset/leora-wechat-f0a9676e96-remote-fe652502.yaml
+    interval: 86400
+  leora-wechat-f0a9676e96:
+    type: http
+    behavior: classical
+    format: yaml
+    url: https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/providers/leora-wechat-f0a9676e96.yaml
+    path: ./ruleset/leora-wechat-f0a9676e96.yaml
+    interval: 86400
+  leora-baidu-3152e3b54f:
+    type: http
+    behavior: classical
+    format: yaml
+    url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Baidu/Baidu.yaml
+    path: ./ruleset/leora-baidu-3152e3b54f.yaml
+    interval: 86400
+  leora-douban-ba992d9f78:
+    type: http
+    behavior: classical
+    format: yaml
+    url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/DouBan/DouBan.yaml
+    path: ./ruleset/leora-douban-ba992d9f78.yaml
+    interval: 86400
+  leora-douyin-3c6c89503d:
+    type: http
+    behavior: classical
+    format: yaml
+    url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/DouYin/DouYin.yaml
+    path: ./ruleset/leora-douyin-3c6c89503d.yaml
+    interval: 86400
+  leora-neteasemusic-76cbde50b3:
+    type: http
+    behavior: classical
+    format: yaml
+    url: https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/providers/leora-neteasemusic-76cbde50b3.yaml
+    path: ./ruleset/leora-neteasemusic-76cbde50b3.yaml
+    interval: 86400
+  leora-wechat-9f121d0b56:
+    type: http
+    behavior: classical
+    format: yaml
+    url: https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/providers/leora-wechat-9f121d0b56.yaml
+    path: ./ruleset/leora-wechat-9f121d0b56.yaml
+    interval: 86400
+  leora-xiaohongshu-e6faece684:
+    type: http
+    behavior: classical
+    format: yaml
+    url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/XiaoHongShu/XiaoHongShu.yaml
+    path: ./ruleset/leora-xiaohongshu-e6faece684.yaml
+    interval: 86400
+  leora-zhihu-c43fcf0f1a:
+    type: http
+    behavior: classical
+    format: text
+    url: https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/Zhihu/Zhihu.list
+    path: ./ruleset/leora-zhihu-c43fcf0f1a.text
+    interval: 86400
+rules:
+- DST-PORT,53,leora-dns-out
+- DOMAIN,localhost,DIRECT
+- DOMAIN-REGEX,^.*\.local$,DIRECT
+- DOMAIN,ts.net,DIRECT
+- DOMAIN-REGEX,^.*\.ts\.net$,DIRECT
+- IP-CIDR,100.64.0.0/10,DIRECT,no-resolve
+- IP-CIDR,10.0.0.0/8,DIRECT,no-resolve
+- IP-CIDR,127.0.0.0/8,DIRECT,no-resolve
+- IP-CIDR,169.254.0.0/16,DIRECT,no-resolve
+- IP-CIDR,172.16.0.0/12,DIRECT,no-resolve
+- IP-CIDR,192.168.0.0/16,DIRECT,no-resolve
+- IP-CIDR6,fd7a:115c:a1e0::/48,DIRECT,no-resolve
+- DOMAIN-SUFFIX,ts.net,DIRECT
+- DST-PORT,853,REJECT
+- DOMAIN-SUFFIX,tailscale.com,DIRECT
+- DOMAIN-SUFFIX,tailscale.io,DIRECT
+- IP-CIDR,100.64.0.0/10,DIRECT,no-resolve
+- IP-CIDR6,fd7a:115c:a1e0::/48,DIRECT,no-resolve
+- IP-CIDR,111.187.0.0/16,DIRECT,no-resolve
+- DOMAIN-SUFFIX,tongji.edu.cn,DIRECT
+- DOMAIN-SUFFIX,tsinghua.edu.cn,DIRECT
+- DOMAIN-SUFFIX,pku.edu.cn,DIRECT
+- DOMAIN-SUFFIX,fudan.edu.cn,DIRECT
+- DOMAIN-SUFFIX,sjtu.edu.cn,DIRECT
+- DOMAIN-SUFFIX,buaa.edu.cn,DIRECT
+- DOMAIN-SUFFIX,gardilily.com,DIRECT
+- RULE-SET,leora-sr-ad-only-1cbf568bcf,REJECT
+- RULE-SET,leora-banad-21086c1183,REJECT
+- RULE-SET,leora-reject-special-d65453ba7b,REJECT
+- RULE-SET,leora-awavenue-ads-rule-surge-e4e9952865,REJECT
+- DOMAIN-SUFFIX,browserleaks.com,PROXY
+- AND,((NETWORK,udp),(DOMAIN-SUFFIX,browserleaks.com)),REJECT
+- DOMAIN-SUFFIX,ip138.com,PROXY
+- AND,((NETWORK,udp),(DOMAIN-SUFFIX,ip138.com)),REJECT
+- DOMAIN-SUFFIX,steamcontent.com,DIRECT
+- DOMAIN,dl.steam.clngaa.com,DIRECT
+- DOMAIN,dl.steam.ksyna.com,DIRECT
+- DOMAIN,st.dl.bscstorage.net,DIRECT
+- DOMAIN,st.dl.eccdnx.com,DIRECT
+- DOMAIN,st.dl.pinyuncloud.com,DIRECT
+- DOMAIN,steampipe.steamcontent.tnkjmec.com,DIRECT
+- DOMAIN,steampowered.com.8686c.com,DIRECT
+- DOMAIN,steamstatic.com.8686c.com,DIRECT
+- DOMAIN,xz.pphimalayanrt.com,DIRECT
+- DOMAIN,cdn-ali.content.steamchina.com,DIRECT
+- DOMAIN,cdn-qc.content.steamchina.com,DIRECT
+- DOMAIN,cdn-ws.content.steamchina.com,DIRECT
+- DOMAIN-SUFFIX,steampowered.com,PROXY
+- AND,((NETWORK,udp),(DOMAIN-SUFFIX,steampowered.com)),REJECT
+- DOMAIN-SUFFIX,steamcommunity.com,PROXY
+- AND,((NETWORK,udp),(DOMAIN-SUFFIX,steamcommunity.com)),REJECT
+- DOMAIN-SUFFIX,steamstatic.com,PROXY
+- AND,((NETWORK,udp),(DOMAIN-SUFFIX,steamstatic.com)),REJECT
+- DOMAIN-SUFFIX,steamchina.com,PROXY
+- AND,((NETWORK,udp),(DOMAIN-SUFFIX,steamchina.com)),REJECT
+- DOMAIN-SUFFIX,steamstore-a.akamaihd.net,PROXY
+- AND,((NETWORK,udp),(DOMAIN-SUFFIX,steamstore-a.akamaihd.net)),REJECT
+- RULE-SET,leora-china-a7f043cebf-remote-e17b747d,DIRECT
+- RULE-SET,leora-china-a7f043cebf-remote-9a83c7c5,DIRECT
+- RULE-SET,leora-china-a7f043cebf,DIRECT
+- RULE-SET,leora-china-43be850ec4,DIRECT
+- RULE-SET,leora-china-domain-ea36d95cfc,DIRECT
+- RULE-SET,leora-ipv6-cidr6-79e2e3a54f,DIRECT
+- IP-CIDR6,2000::/3,REJECT,no-resolve
+- DOMAIN-SUFFIX,tonhie.online,DIRECT
+- RULE-SET,leora-bilibili-8309ab8776,DIRECT
+- RULE-SET,leora-epic-6695e1299e,DIRECT
+- RULE-SET,leora-game-3fda622093,DIRECT
+- RULE-SET,leora-lan-d856a2051a,DIRECT
+- RULE-SET,leora-nintendo-ead1ecd7b1,DIRECT
+- RULE-SET,leora-sony-1a1ae98e51,DIRECT
+- RULE-SET,leora-steam-ec23e21d9f,PROXY
+- AND,((NETWORK,udp),(RULE-SET,leora-steam-ec23e21d9f)),REJECT
+- RULE-SET,leora-proxy-ai-9d828d5a6a,PROXY
+- AND,((NETWORK,udp),(RULE-SET,leora-proxy-ai-9d828d5a6a)),REJECT
+- RULE-SET,leora-applenews-7d0ff56eb0,PROXY
+- AND,((NETWORK,udp),(RULE-SET,leora-applenews-7d0ff56eb0)),REJECT
+- RULE-SET,leora-ai-d0227fc3de,PROXY
+- AND,((NETWORK,udp),(RULE-SET,leora-ai-d0227fc3de)),REJECT
+- RULE-SET,leora-apple-7469ce5ec6,DIRECT
+- RULE-SET,leora-direct-cdn-4f667db6d3,DIRECT
+- RULE-SET,leora-proxy-special-1c6977e920,PROXY
+- AND,((NETWORK,udp),(RULE-SET,leora-proxy-special-1c6977e920)),REJECT
+- RULE-SET,leora-global-15c9f437d2,PROXY
+- AND,((NETWORK,udp),(RULE-SET,leora-global-15c9f437d2)),REJECT
+- RULE-SET,leora-amazon-f9dd7b4167,PROXY
+- AND,((NETWORK,udp),(RULE-SET,leora-amazon-f9dd7b4167)),REJECT
+- RULE-SET,leora-disney-00051c20c7,PROXY
+- AND,((NETWORK,udp),(RULE-SET,leora-disney-00051c20c7)),REJECT
+- RULE-SET,leora-facebook-4db45cdfa1,PROXY
+- AND,((NETWORK,udp),(RULE-SET,leora-facebook-4db45cdfa1)),REJECT
+- RULE-SET,leora-github-700b636bf4,PROXY
+- AND,((NETWORK,udp),(RULE-SET,leora-github-700b636bf4)),REJECT
+- RULE-SET,leora-google-a0ccdec47e,PROXY
+- AND,((NETWORK,udp),(RULE-SET,leora-google-a0ccdec47e)),REJECT
+- RULE-SET,leora-hbo-b177c915a8,PROXY
+- AND,((NETWORK,udp),(RULE-SET,leora-hbo-b177c915a8)),REJECT
+- RULE-SET,leora-microsoft-fd9d158cd5,PROXY
+- AND,((NETWORK,udp),(RULE-SET,leora-microsoft-fd9d158cd5)),REJECT
+- RULE-SET,leora-netflix-7cf3ac1d9b,PROXY
+- AND,((NETWORK,udp),(RULE-SET,leora-netflix-7cf3ac1d9b)),REJECT
+- RULE-SET,leora-paypal-3399098e28,PROXY
+- AND,((NETWORK,udp),(RULE-SET,leora-paypal-3399098e28)),REJECT
+- RULE-SET,leora-proxylite-696b139720,PROXY
+- AND,((NETWORK,udp),(RULE-SET,leora-proxylite-696b139720)),REJECT
+- RULE-SET,leora-spotify-1b895d3727,PROXY
+- AND,((NETWORK,udp),(RULE-SET,leora-spotify-1b895d3727)),REJECT
+- RULE-SET,leora-telegram-4055469d2b,PROXY
+- AND,((NETWORK,udp),(RULE-SET,leora-telegram-4055469d2b)),REJECT
+- RULE-SET,leora-tiktok-ffcc7d352b,PROXY
+- AND,((NETWORK,udp),(RULE-SET,leora-tiktok-ffcc7d352b)),REJECT
+- RULE-SET,leora-twitter-5acf339a53,PROXY
+- AND,((NETWORK,udp),(RULE-SET,leora-twitter-5acf339a53)),REJECT
+- RULE-SET,leora-youtube-c68c98c20b,PROXY
+- AND,((NETWORK,udp),(RULE-SET,leora-youtube-c68c98c20b)),REJECT
+- RULE-SET,leora-apple-a062ee70ad-remote-16e84d32,DIRECT
+- RULE-SET,leora-apple-a062ee70ad,DIRECT
+- RULE-SET,leora-wechat-f0a9676e96-remote-fe652502,DIRECT
+- RULE-SET,leora-wechat-f0a9676e96,DIRECT
+- RULE-SET,leora-baidu-3152e3b54f,DIRECT
+- RULE-SET,leora-douban-ba992d9f78,DIRECT
+- RULE-SET,leora-douyin-3c6c89503d,DIRECT
+- RULE-SET,leora-neteasemusic-76cbde50b3,DIRECT
+- RULE-SET,leora-wechat-9f121d0b56,DIRECT
+- RULE-SET,leora-xiaohongshu-e6faece684,DIRECT
+- RULE-SET,leora-zhihu-c43fcf0f1a,DIRECT
+- GEOIP,CN,DIRECT
+- MATCH,DIRECT

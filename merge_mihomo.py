@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""Merge Leora routing with mandatory transport protection into a complete Mihomo YAML."""
+"""Merge Leora (whitelist) or Umbra (blacklist) routing into a complete Mihomo YAML."""
 import argparse
 import copy
 import pathlib
 import yaml
-from routing_policy import mihomo_settings, protected_mihomo, validate_mihomo_proxy, mihomo_dns_outbound, DNS_OUT
+from routing_policy import (MODES, routing_file, mihomo_settings, protected_mihomo,
+                            validate_mihomo_proxy, mihomo_dns_outbound, DNS_OUT)
 
 ROOT = pathlib.Path(__file__).resolve().parent
+DEFAULT_ROUTING = {mode: ROOT / routing_file(mode) for mode in MODES}
 
 
 def merge_config(payload, routing, proxy_name='PROXY'):
@@ -34,11 +36,15 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--input', required=True, type=pathlib.Path)
     parser.add_argument('--output', required=True, type=pathlib.Path)
-    parser.add_argument('--routing', type=pathlib.Path, default=ROOT / 'Leora-Clash-Routing.yaml')
+    parser.add_argument('--mode', choices=MODES, default='leora',
+                        help='leora=whitelist (default proxy), umbra=blacklist (default direct)')
+    parser.add_argument('--routing', type=pathlib.Path,
+                        help='routing YAML override; defaults to the selected mode profile')
     parser.add_argument('--proxy-name', default='PROXY')
     args = parser.parse_args()
+    routing_path = args.routing or DEFAULT_ROUTING[args.mode]
     result = merge_config(yaml.safe_load(args.input.read_text()),
-                          yaml.safe_load(args.routing.read_text()), args.proxy_name)
+                          yaml.safe_load(routing_path.read_text()), args.proxy_name)
     if args.input.resolve() == args.output.resolve():
         parser.error('Use a separate output file to keep the original configuration')
     args.output.write_text(yaml.safe_dump(result, allow_unicode=True, sort_keys=False))

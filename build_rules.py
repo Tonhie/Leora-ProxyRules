@@ -1,17 +1,31 @@
 #!/usr/bin/env python3
-"""Build linked Mihomo routing and ordered Xray overlays; fail on unknown rule types.
+"""Build Leora (whitelist) and Umbra (blacklist) Mihomo routing and ordered Xray overlays; fail on unknown rule types.
 Python 3.10+, pip install PyYAML. No subscription credentials are needed.
 """
 import argparse, concurrent.futures, datetime, hashlib, ipaddress, json, pathlib, re, urllib.parse, urllib.request
 import yaml
-from routing_policy import mihomo_settings, protected_mihomo, protected_xray, xray_dns, dns_outbound, mihomo_dns_outbound, public_dns, BOOTSTRAP_DOH, bypass_rules, basic_settings_audit, xray_direct_settings
-SOURCE='https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/Leora-ProxyRules.conf'
-DEFAULT_BASE='https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main'
-P=pathlib.Path(__file__).resolve().parent
+from routing_policy import (MODES, MODE_NAME, FINAL_TARGET, conf_file, routing_file, xray_file, report_file,
+                            umbra_conf, mihomo_settings, protected_mihomo, protected_xray, xray_dns,
+                            dns_outbound, mihomo_dns_outbound, public_dns, BOOTSTRAP_DOH, bypass_rules,
+                            basic_settings_audit, xray_direct_settings)
+SOURCE = 'https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/Leora-ProxyRules.conf'
+SOURCE_UMBRA = 'https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/Umbra-ProxyRules.conf'
+DEFAULT_BASE = 'https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main'
+P = pathlib.Path(__file__).resolve().parent
 # Inline rules that are Shadowrocket/Clash-only: Xray's IPOnDemand resolver would turn
 # the broad IPv6 reject into a domain block, so the Xray overlay keeps proxy rules instead.
-XRAY_SKIP_INLINE={'IP-CIDR6,2000::/3,REJECT,no-resolve'}
-CACHE=P/'.cache'; CACHE.mkdir(exist_ok=True)
+XRAY_SKIP_INLINE = {'IP-CIDR6,2000::/3,REJECT,no-resolve'}
+CACHE = P/'.cache'; CACHE.mkdir(exist_ok=True)
+
+POLICY = ('Full portable Shadowrocket rules in source order with local bypass, DNS interception, '
+          'global DoT deny, route-dependent STUN, an ipcidr DIRECT rule set for mainland-China '
+          'IPv6 prefixes and a trailing GEOIP CN direct fallback for unmatched domestic IPv4')
+POLICY_UMBRA = ('Full portable Shadowrocket rules in source order with local bypass, DNS interception, '
+                'global DoT deny, route-dependent STUN, an ipcidr DIRECT rule set for mainland-China '
+                'IPv6 prefixes, a fail-closed foreign-IPv6 guard in every engine and a trailing '
+                'DIRECT catch-all: only the explicit proxy lists leave through the proxy, '
+                'unmatched domains and IPv4 are direct')
+
 
 def fetch(url):
     path=CACHE/hashlib.sha256(url.encode()).hexdigest()
@@ -83,7 +97,7 @@ def dump(name,obj):
 def stable_report(report,previous):
     """Keep the previous generated_utc when nothing but the timestamp changed.
 
-    Scheduled refreshes must not commit a daily timestamp-only diff; a real
+    Scheduled refreshes must not commit a timestamp-only diff; a real
     upstream or configuration change still produces a new timestamp.
     """
     if not isinstance(previous,dict):return report
@@ -93,14 +107,22 @@ def stable_report(report,previous):
         report['generated_utc']=previous.get('generated_utc',report['generated_utc'])
     return report
 
-def run():
-    basic_settings_audit()
-    conf=(P/'Leora-ProxyRules.conf').read_text(encoding='utf-8')
+def read_entries(text):
     entries=[];in_rules=False
-    for line in conf.splitlines():
+    for line in text.splitlines():
         line=line.strip()
         if line.startswith('['):in_rules=line=='[Rule]';continue
         if in_rules and line and not line.startswith('#'):entries.append(line)
+    return entries
+
+def profile_entries(mode,leora_text):
+    if mode=='leora':
+        return read_entries(leora_text)
+    if mode=='umbra':
+        return read_entries(umbra_conf(leora_text))
+    raise ValueError('Unknown routing mode: '+str(mode))
+
+def fetch_sources(entries):
     sources=list(dict.fromkeys(l.split(',')[1] for l in entries if l.startswith(('RULE-SET,','DOMAIN-SET,'))))
     alts=list(dict.fromkeys(filter(None,map(alternative,sources))))
     alts += [u.removesuffix('.yaml')+'_Domain.yaml' for u in list(alts) if any('/'+x+'/'+x+'.yaml' in u for x in ('China','Global','Apple'))]
@@ -121,6 +143,11 @@ def run():
     for n,u in as_urls.items():
         obj=json.loads(data[u]);assert obj['status']=='ok',obj
         as_prefix[n]=list(dict.fromkeys(str(ipaddress.ip_network(x['prefix'],strict=False)) for x in obj['data']['prefixes']))
+    return sources,data,as_prefix,as_urls
+
+def build_profile(entries,mode,data,as_prefix,base):
+    """Produce Clash rules, Xray rules, rule providers and the conversion list."""
+    if mode not in MODES:raise ValueError('Unknown routing mode: '+str(mode))
     providers={};clash=[];xr=[]
     conversions=[]
     # SR skip-proxy / excluded local networks, before its Rule section.
@@ -143,7 +170,13 @@ def run():
     xray_rules(local_rules,'DIRECT','local-bypass')
     for i,line in enumerate(entries):
         a=line.split(',');typ=a[0]
-        if typ=='FINAL':clash.append('MATCH,'+a[1]);xr.append({'type':'field','network':'tcp,udp','outboundTag':{'DIRECT':'direct','PROXY':'proxy','REJECT':'block'}[a[1]],'ruleTag':'final-proxy'});continue
+        if typ=='FINAL':
+            target=a[1]
+            if target!=FINAL_TARGET[mode]:
+                raise ValueError('FINAL target does not match mode '+mode+': '+line)
+            clash.append('MATCH,'+target)
+            xr.append({'type':'field','network':'tcp,udp','outboundTag':{'DIRECT':'direct','PROXY':'proxy','REJECT':'block'}[target],'ruleTag':'final-'+target.lower()})
+            continue
         if typ not in ('RULE-SET','DOMAIN-SET'):
             rules,skipped=parse(','.join(a[:2]));clash.append(','.join(a))
             if line not in XRAY_SKIP_INLINE:xray_rules(rules,a[2],f'inline-{i:02d}')
@@ -181,14 +214,14 @@ def run():
                 candidate=yaml.safe_load(data[v])
                 if not isinstance(candidate,dict) or not isinstance(candidate.get('payload'),list):continue
                 try:
-                    pr,ps=parse('\n'.join(candidate['payload']));mode='classical'
+                    pr,ps=parse('\n'.join(candidate['payload']));mode_='classical'
                 except Exception:
-                    try:pr,ps=parse('\n'.join(candidate['payload']),True);mode='domain'
+                    try:pr,ps=parse('\n'.join(candidate['payload']),True);mode_='domain'
                     except Exception:continue
                 subset=compare(pr)
                 if ps or not subset or not subset <= set(normalized) or not subset & remaining:continue
                 part=rid+'-remote-'+hashlib.sha256(v.encode()).hexdigest()[:8]
-                providers[part]={'type':'http','behavior':mode,'format':'yaml','url':v,'path':f'./ruleset/{part}.yaml','interval':86400}
+                providers[part]={'type':'http','behavior':mode_,'format':'yaml','url':v,'path':f'./ruleset/{part}.yaml','interval':86400}
                 clash.append(f'RULE-SET,{part},{target}')
                 linked_parts.append(v);remaining-=subset
             normalized=[r for r in normalized if r in remaining]
@@ -199,7 +232,7 @@ def run():
         if choice is None:
             payload=[v for k,v,n in rules] if ip_only else normalized
             name=f'providers/{rid}.yaml';dump(name,{'payload':payload})
-            choice=(ARGS.base.rstrip('/')+'/'+name,'yaml')
+            choice=(base.rstrip('/')+'/'+name,'yaml')
             reason=('All entries are IP prefixes; converted to an ipcidr provider for prefix-trie matching' if ip_only
                     else 'No verified equivalent upstream payload; converted provider hosted in your repository')
         providers[rid]={'type':'http','behavior':behavior,'format':choice[1],'url':choice[0],'path':f'./ruleset/{rid}.{choice[1]}','interval':86400}
@@ -210,19 +243,67 @@ def run():
         for k in ('domain','ip'):
             if k in r:r[k]=list(dict.fromkeys(r[k]))
     clash=protected_mihomo(clash)
-    xr=protected_xray(xr)
-    dump('Leora-Clash-Routing.yaml',dict(mihomo_settings(),**{'proxies':[mihomo_dns_outbound()],'rule-providers':providers,'rules':clash}))
-    dump('Leora-Xray-Routing.json',{'dns':xray_dns(),'outbounds':[dns_outbound(), {'tag':'direct','protocol':'freedom','settings':xray_direct_settings()}],'routing':{'domainStrategy':'IPOnDemand','rules':xr}})
-    used={v['url'].split('/providers/')[-1] for v in providers.values() if '/providers/' in v['url']}
+    xr=protected_xray(xr,mode)
+    return clash,xr,providers,conversions
+
+def make_report(mode,conf_text,providers,conversions,as_urls,as_prefix,xray_rules_count,base):
+    source=SOURCE if mode=='leora' else SOURCE_UMBRA
+    report={'generated_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            'source':source,'base':base,'source_sha256':hashlib.sha256(conf_text.encode()).hexdigest(),
+            'policy':POLICY if mode=='leora' else POLICY_UMBRA,
+            'general_settings':basic_settings_audit(),
+            'privacy':{'public_dns':public_dns(),'bootstrap_dns':BOOTSTRAP_DOH,
+                       'stun_policy':'DIRECT destinations allow STUN; proxy destinations keep adjacent UDP REJECT; unmatched UDP follows the mode default','native_stun_spoof':False,'browser_webrtc_restriction_required':True},
+            'providers':conversions,'asn_sources':as_urls,'asn_prefix_counts':{n:len(v) for n,v in as_prefix.items()},
+            'xray_rules':xray_rules_count,
+            'upstream_provider_count':sum(not r['url'].startswith(base.rstrip('/')+'/providers/') for r in providers.values())}
+    if mode=='umbra':
+        report['mode']=mode
+        report['mode_name']=MODE_NAME[mode]
+        report['final']='DIRECT'
+    return report
+
+def run():
+    basic_settings_audit()
+    selected=MODES if ARGS.mode=='both' else (ARGS.mode,)
+    leora_text=(P/conf_file('leora')).read_text(encoding='utf-8')
+    texts={mode:(leora_text if mode=='leora' else umbra_conf(leora_text)) for mode in selected}
+    entries={mode:read_entries(texts[mode]) for mode in selected}
+    sources,data,as_prefix,as_urls=fetch_sources(entries[selected[0]])
+    # Both profiles share the same remote sources and therefore the same
+    # providers; only the final default (and the Xray IPv6 guard) differ.
+    for mode in selected:
+        if [l.split(',')[1] for l in entries[mode] if l.startswith(('RULE-SET,','DOMAIN-SET,'))]!=sources:
+            raise ValueError('Remote sources differ between profiles: '+mode)
+    used=set();results={}
+    for mode in selected:
+        clash,xr,providers,conversions=build_profile(entries[mode],mode,data,as_prefix,ARGS.base)
+        used.update(v['url'].split('/providers/')[-1] for v in providers.values() if '/providers/' in v['url'])
+        results[mode]=(clash,xr,providers,conversions,texts[mode])
+    if len(results)>1:
+        # Shared providers are written once; both profiles reference the same ids.
+        base_providers=results[selected[0]][2]
+        for mode in selected:
+            if results[mode][2]!=base_providers:
+                raise ValueError('Rule providers must be identical across modes')
+    for mode in selected:
+        clash,xr,providers,conversions,text=results[mode]
+        dump(routing_file(mode),dict(mihomo_settings(),**{'proxies':[mihomo_dns_outbound()],'rule-providers':providers,'rules':clash}))
+        dump(xray_file(mode),{'dns':xray_dns(),'outbounds':[dns_outbound(),{'tag':'direct','protocol':'freedom','settings':xray_direct_settings()}],'routing':{'domainStrategy':'IPOnDemand','rules':xr}})
+        if mode=='umbra':
+            (P/conf_file('umbra')).write_text(text,encoding='utf-8')
+        report=make_report(mode,text,providers,conversions,as_urls,as_prefix,len(xr),ARGS.base)
+        previous=P/report_file(mode)
+        if previous.exists():
+            try:report=stable_report(report,json.loads(previous.read_text(encoding='utf-8')))
+            except ValueError:pass
+        dump(report_file(mode),report)
     for stale in (P/'providers').glob('leora-*.yaml'):
         if stale.name not in used:stale.unlink()
-    report={'generated_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'source':SOURCE,'base':ARGS.base,'source_sha256':hashlib.sha256(conf.encode()).hexdigest(),'policy':'Full portable Shadowrocket rules in source order with local bypass, DNS interception, global DoT deny, route-dependent STUN, an ipcidr DIRECT rule set for mainland-China IPv6 prefixes and a trailing GEOIP CN direct fallback for unmatched domestic IPv4', 'general_settings':basic_settings_audit(),'privacy':{'public_dns':public_dns(),'bootstrap_dns':BOOTSTRAP_DOH,'stun_policy':'DIRECT destinations allow STUN; proxy destinations keep adjacent UDP REJECT; unmatched UDP rejected after MATCH','native_stun_spoof':False,'browser_webrtc_restriction_required':True},'providers':conversions,'asn_sources':as_urls,'asn_prefix_counts':{n:len(v) for n,v in as_prefix.items()},'xray_rules':len(xr),'upstream_provider_count':sum(not r['url'].startswith(ARGS.base.rstrip('/')+'/providers/') for r in providers.values())}
-    previous=P/'conversion-report.json'
-    if previous.exists():
-        try:report=stable_report(report,json.loads(previous.read_text(encoding='utf-8')))
-        except ValueError:pass
-    dump('conversion-report.json',report)
-    print(json.dumps({'providers':len(providers),'upstream_links':sum(not r['url'].startswith(ARGS.base.rstrip('/')+'/providers/') for r in providers.values()),'converted_providers':sum(r['url'].startswith(ARGS.base.rstrip('/')+'/providers/') for r in providers.values()),'xray_rules':len(xr),'unsupported_count':sum(len(r['unsupported']) for r in conversions)}))
+    summary={mode:{'providers':len(results[mode][2]),'xray_rules':len(results[mode][1]),
+                   'converted_providers':sum(r['url'].startswith(ARGS.base.rstrip('/')+'/providers/') for r in results[mode][2].values()),
+                   'unsupported_count':sum(len(r['unsupported']) for r in results[mode][3])} for mode in selected}
+    print(json.dumps(summary))
 
 if __name__=='__main__':
-    parser=argparse.ArgumentParser();parser.add_argument('--base',default=DEFAULT_BASE,help='GitHub raw URL for the directory containing this script');parser.add_argument('--offline',action='store_true');ARGS=parser.parse_args();run()
+    parser=argparse.ArgumentParser();parser.add_argument('--base',default=DEFAULT_BASE,help='GitHub raw URL for the directory containing this script');parser.add_argument('--mode',choices=('both',)+MODES,default='both',help='profile(s) to build; both is the default');parser.add_argument('--offline',action='store_true');ARGS=parser.parse_args();run()

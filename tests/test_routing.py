@@ -7,7 +7,8 @@ import yaml
 from merge_mihomo import merge_config
 from merge_xray import merge_subscription
 from build_rules import provider_name, XRAY_SKIP_INLINE
-from routing_policy import STEAM_DOWNLOADS, STEAM_PROXY, protected_mihomo, protected_xray, xray_dns
+from routing_policy import (MODES, STEAM_DOWNLOADS, STEAM_PROXY, conf_file, routing_file,
+                            xray_file, report_file, protected_mihomo, protected_xray, xray_dns)
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -70,45 +71,50 @@ class PolicyTests(unittest.TestCase):
 
     def test_generated_sources_and_inline_rules_match_shadowrocket(self):
         import hashlib
-        source = (ROOT / 'Leora-ProxyRules.conf').read_text(encoding='utf-8')
-        entries = [l.strip() for l in source.split('[Rule]',1)[1].split('[Host]',1)[0].splitlines()
-                   if l.strip() and not l.lstrip().startswith('#')]
-        remote = [l.split(',') for l in entries if l.startswith(('RULE-SET,','DOMAIN-SET,'))]
-        report = json.loads((ROOT/'conversion-report.json').read_text(encoding='utf-8'))
-        self.assertEqual([(r['source'],r['action']) for r in report['providers']],
-                         [(r[1],r[2]) for r in remote])
-        self.assertGreater(len(remote), 40)
-        self.assertEqual(report['source_sha256'], hashlib.sha256(source.encode()).hexdigest())
-        m = yaml.safe_load((ROOT/'Leora-Clash-Routing.yaml').read_text(encoding='utf-8'))
-        x = json.loads((ROOT/'Leora-Xray-Routing.json').read_text(encoding='utf-8'))['routing']['rules']
-        last_m = -1
-        last_x = -1
-        for i, line in enumerate(entries):
-            parts = line.split(',')
-            if parts[0] in ('RULE-SET','DOMAIN-SET'):
-                rid = provider_name(parts[1], parts[2])
-                indexes = [j for j,r in enumerate(m['rules']) if r.startswith('RULE-SET,'+rid+',') or r.startswith('RULE-SET,'+rid+'-remote-')]
-                xi = [j for j,r in enumerate(x) if r.get('ruleTag')==rid]
-                self.assertTrue(indexes, line)
-                self.assertTrue(xi, line)
-            elif parts[0] == 'FINAL':
-                indexes = [m['rules'].index('MATCH,'+parts[1])]
-                xi = [j for j,r in enumerate(x) if r.get('ruleTag')=='final-proxy']
-            else:
-                indexes = [m['rules'].index(line, last_m + 1)]
-                xi = [j for j,r in enumerate(x) if r.get('ruleTag')==f'inline-{i:02d}']
-                if line in XRAY_SKIP_INLINE:
-                    # Shadowrocket/Clash-only guard: Xray keeps domain proxy rules instead.
-                    self.assertEqual(xi, [], line)
+        for mode in MODES:
+            with self.subTest(mode=mode):
+                source = (ROOT / conf_file(mode)).read_text(encoding='utf-8')
+                entries = [l.strip() for l in source.split('[Rule]',1)[1].split('[Host]',1)[0].splitlines()
+                           if l.strip() and not l.lstrip().startswith('#')]
+                remote = [l.split(',') for l in entries if l.startswith(('RULE-SET,','DOMAIN-SET,'))]
+                report = json.loads((ROOT/report_file(mode)).read_text(encoding='utf-8'))
+                self.assertEqual([(r['source'],r['action']) for r in report['providers']],
+                                 [(r[1],r[2]) for r in remote])
+                self.assertGreater(len(remote), 40)
+                self.assertEqual(report['source_sha256'], hashlib.sha256(source.encode()).hexdigest())
+                m = yaml.safe_load((ROOT/routing_file(mode)).read_text(encoding='utf-8'))
+                x = json.loads((ROOT/xray_file(mode)).read_text(encoding='utf-8'))['routing']['rules']
+                last_m = -1
+                last_x = -1
+                for i, line in enumerate(entries):
+                    parts = line.split(',')
+                    if parts[0] in ('RULE-SET','DOMAIN-SET'):
+                        rid = provider_name(parts[1], parts[2])
+                        indexes = [j for j,r in enumerate(m['rules']) if r.startswith('RULE-SET,'+rid+',') or r.startswith('RULE-SET,'+rid+'-remote-')]
+                        xi = [j for j,r in enumerate(x) if r.get('ruleTag')==rid]
+                        self.assertTrue(indexes, line)
+                        self.assertTrue(xi, line)
+                    elif parts[0] == 'FINAL':
+                        indexes = [m['rules'].index('MATCH,'+parts[1])]
+                        xi = [j for j,r in enumerate(x) if r.get('ruleTag')=='final-'+parts[1].lower()]
+                    else:
+                        indexes = [m['rules'].index(line, last_m + 1)]
+                        xi = [j for j,r in enumerate(x) if r.get('ruleTag')==f'inline-{i:02d}']
+                        if line in XRAY_SKIP_INLINE:
+                            # Shadowrocket/Clash-only guard: Xray keeps domain proxy rules instead.
+                            self.assertEqual(xi, [], line)
+                            self.assertGreater(min(indexes), last_m, line)
+                            last_m = max(indexes)
+                            continue
+                    action = parts[1] if parts[0]=='FINAL' else parts[2]
+                    for j in xi:
+                        self.assertEqual(x[j]['outboundTag'], {'DIRECT':'direct','PROXY':'proxy','REJECT':'block'}[action])
                     self.assertGreater(min(indexes), last_m, line)
-                    last_m = max(indexes)
-                    continue
-            action = parts[1] if parts[0]=='FINAL' else parts[2]
-            for j in xi:
-                self.assertEqual(x[j]['outboundTag'], {'DIRECT':'direct','PROXY':'proxy','REJECT':'block'}[action])
-            self.assertGreater(min(indexes), last_m, line)
-            self.assertGreater(min(xi), last_x, line)
-            last_m, last_x = max(indexes), max(xi)
+                    self.assertGreater(min(xi), last_x, line)
+                    last_m, last_x = max(indexes), max(xi)
+                if mode == 'umbra':
+                    self.assertEqual(m['rules'][-1], 'MATCH,DIRECT')
+                    self.assertEqual(x[-1]['ruleTag'], 'final-direct')
 
     def test_domestic_geoip_fallback_stays_after_proxy_and_keeps_dot_guard_global(self):
         m = yaml.safe_load((ROOT / 'Leora-Clash-Routing.yaml').read_text(encoding='utf-8'))
@@ -168,13 +174,16 @@ class PolicyTests(unittest.TestCase):
         self.assertLess(direct, first_xray_proxy)
 
     def test_published_entries_are_already_protected(self):
-        m = yaml.safe_load((ROOT / 'Leora-Clash-Routing.yaml').read_text(encoding='utf-8'))
-        x = json.loads((ROOT / 'Leora-Xray-Routing.json').read_text(encoding='utf-8'))
-        self.assertTrue(m['tun']['enable'])
-        self.assertEqual(protected_mihomo(m['rules']), m['rules'])
-        self.assertEqual(protected_xray(x['routing']['rules']), x['routing']['rules'])
-        self.assertEqual(merge_config(self.m, m)['rules'], m['rules'])
-        self.assertEqual(merge_subscription(self.x, x)['routing']['rules'][1:], x['routing']['rules'])
+        for mode in MODES:
+            with self.subTest(mode=mode):
+                m = yaml.safe_load((ROOT / routing_file(mode)).read_text(encoding='utf-8'))
+                x = json.loads((ROOT / xray_file(mode)).read_text(encoding='utf-8'))
+                self.assertTrue(m['tun']['enable'])
+                self.assertEqual(protected_mihomo(m['rules']), m['rules'])
+                self.assertEqual(protected_xray(x['routing']['rules'], mode), x['routing']['rules'])
+                self.assertEqual(merge_config(self.m, m)['rules'], m['rules'])
+                self.assertEqual(merge_subscription(self.x, x, mode=mode)['routing']['rules'][1:],
+                                 x['routing']['rules'])
 
     def test_no_unprotected_entry_or_duplicate_template_is_published(self):
         for name in ('Leora-Mihomo-WebRTC.yaml', 'Leora-Xray-WebRTC.json',

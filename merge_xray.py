@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
-"""Merge the ordered routing overlay into a local Xray JSON subscription.
+"""Merge the Leora (whitelist) or Umbra (blacklist) routing overlay into a local Xray JSON subscription.
 No network requests. Synchronize DNS; preserve nodes, streamSettings and balancers.
 This must run on each subscription response in a server-side integration.
 """
 import argparse,copy,json,pathlib
-from routing_policy import validate_xray_proxy, protected_xray, xray_dns_for_config, dns_outbound, DNS_TAG, DNS_OUT, BOOTSTRAP_TAG, xray_direct_settings
+from routing_policy import (MODES, xray_file, validate_xray_proxy, protected_xray,
+                            xray_dns_for_config, dns_outbound, DNS_TAG, DNS_OUT,
+                            BOOTSTRAP_TAG, xray_direct_settings)
 
-def merge_subscription(payload, overlay, proxy_tag='proxy', proxy_balancer=None):
+DEFAULT_ROUTING = {mode: pathlib.Path(__file__).with_name(xray_file(mode)) for mode in MODES}
+
+
+def merge_subscription(payload, overlay, proxy_tag='proxy', proxy_balancer=None, mode='leora'):
     if overlay.get('routing', {}).get('script'):
         raise ValueError('WebRTC guard cannot be combined with a custom routing script')
     result=copy.deepcopy(payload)
@@ -39,7 +44,7 @@ def merge_subscription(payload, overlay, proxy_tag='proxy', proxy_balancer=None)
         config['dns']=xray_dns_for_config(config)
         validate_xray_proxy(config, proxy_tag, proxy_balancer)
         routing=copy.deepcopy(overlay['routing'])
-        routing['rules']=protected_xray(routing['rules'])
+        routing['rules']=protected_xray(routing['rules'], mode)
         if balancers:routing['balancers']=copy.deepcopy(balancers)
         for r in routing['rules']:
             if r.get('outboundTag')=='proxy':
@@ -55,11 +60,13 @@ def merge_subscription(payload, overlay, proxy_tag='proxy', proxy_balancer=None)
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--input',required=True,type=pathlib.Path)
-    p.add_argument('--routing',type=pathlib.Path,default=pathlib.Path(__file__).with_name('Leora-Xray-Routing.json'))
+    p.add_argument('--routing',type=pathlib.Path,help='overlay override; defaults to the selected mode profile')
     p.add_argument('--output',required=True,type=pathlib.Path)
+    p.add_argument('--mode',choices=MODES,default='leora',help='leora=whitelist (default proxy), umbra=blacklist (default direct)')
     g=p.add_mutually_exclusive_group();g.add_argument('--proxy-tag',default='proxy');g.add_argument('--proxy-balancer')
     a=p.parse_args()
     if a.input.resolve()==a.output.resolve():p.error('Use a separate output file to keep the original configuration')
-    out=merge_subscription(json.loads(a.input.read_text()),json.loads(a.routing.read_text()),a.proxy_tag,a.proxy_balancer)
+    routing_path=a.routing or DEFAULT_ROUTING[a.mode]
+    out=merge_subscription(json.loads(a.input.read_text()),json.loads(routing_path.read_text()),a.proxy_tag,a.proxy_balancer,a.mode)
     a.output.write_text(json.dumps(out,ensure_ascii=False,separators=(',',':'))+'\n')
 if __name__=='__main__':main()

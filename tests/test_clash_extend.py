@@ -16,6 +16,7 @@ from routing_policy import mihomo_settings, protected_mihomo
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / 'Leora-Clash-Extend.js'
+UMBRA_SCRIPT = ROOT / 'Umbra-Clash-Extend.js'
 NODE = shutil.which('node')
 
 
@@ -62,7 +63,7 @@ def remap_rule(rule, target):
     return ','.join(parts)
 
 
-def run_script(config):
+def run_script(config, script=SCRIPT):
     if NODE is None:
         raise unittest.SkipTest('node is required to execute the Clash script')
     with tempfile.TemporaryDirectory() as temp:
@@ -80,7 +81,7 @@ def run_script(config):
             encoding='utf-8',
         )
         completed = subprocess.run(
-            [NODE, str(harness), str(SCRIPT), str(config_file), str(output_file)],
+            [NODE, str(harness), str(script), str(config_file), str(output_file)],
             capture_output=True, text=True, encoding='utf-8', timeout=60,
         )
         if completed.returncode != 0:
@@ -88,7 +89,7 @@ def run_script(config):
         return json.loads(output_file.read_text(encoding='utf-8'))
 
 
-def eval_artifact(expression):
+def eval_artifact(expression, script=SCRIPT):
     if NODE is None:
         raise unittest.SkipTest('node is required to evaluate the Clash script')
     with tempfile.TemporaryDirectory() as temp:
@@ -103,7 +104,7 @@ def eval_artifact(expression):
             encoding='utf-8',
         )
         completed = subprocess.run(
-            [NODE, str(harness), str(SCRIPT), expression, str(output_file)],
+            [NODE, str(harness), str(script), expression, str(output_file)],
             capture_output=True, text=True, encoding='utf-8', timeout=60,
         )
         if completed.returncode != 0:
@@ -134,12 +135,79 @@ class ArtifactTests(unittest.TestCase):
                          {'name': 'leora-dns-out', 'type': 'dns'})
 
     def test_script_has_the_quickjs_entry_point_and_no_platform_apis(self):
-        source = SCRIPT.read_text(encoding='utf-8')
-        self.assertIn('function main(config)', source)
-        for forbidden in ('require(', 'fetch(', 'XMLHttpRequest',
-                          'setTimeout(', 'process.', 'node:'):
-            self.assertNotIn(forbidden, source)
-        self.assertNotRegex(source, r'(?m)^\s*import\s')
+        for script in (SCRIPT, UMBRA_SCRIPT):
+            source = script.read_text(encoding='utf-8')
+            self.assertIn('function main(config)', source)
+            for forbidden in ('require(', 'fetch(', 'XMLHttpRequest',
+                              'setTimeout(', 'process.', 'node:'):
+                self.assertNotIn(forbidden, source, script.name)
+            self.assertNotRegex(source, r'(?m)^\s*import\s')
+
+
+class UmbraArtifactTests(unittest.TestCase):
+    def setUp(self):
+        self.routing = yaml.safe_load(
+            (ROOT / 'Umbra-Clash-Routing.yaml').read_text(encoding='utf-8'))
+
+    def test_checked_in_script_is_generated_from_current_routing(self):
+        self.assertEqual(build_clash.build_script(self.routing, 'umbra'),
+                         UMBRA_SCRIPT.read_text(encoding='utf-8'))
+        self.assertIn('Umbra Proxy Rules - Clash Extend script.',
+                      UMBRA_SCRIPT.read_text(encoding='utf-8'))
+
+    def test_embedded_routing_equals_canonical_sources(self):
+        embedded = eval_artifact('ROUTING', UMBRA_SCRIPT)
+        settings = mihomo_settings()
+        for key in ('mode', 'ipv6', 'hosts', 'tun', 'dns'):
+            self.assertEqual(embedded[key], settings[key], key)
+        self.assertEqual(embedded['rule-providers'], self.routing['rule-providers'])
+        self.assertEqual(embedded['rules'], protected_mihomo(self.routing['rules']))
+        self.assertEqual(embedded['rules'][-1], 'MATCH,DIRECT')
+        self.assertEqual(embedded['dns-proxy'],
+                         {'name': 'leora-dns-out', 'type': 'dns'})
+
+
+class UmbraClashScriptTests(unittest.TestCase):
+    def setUp(self):
+        self.routing = yaml.safe_load(
+            (ROOT / 'Umbra-Clash-Routing.yaml').read_text(encoding='utf-8'))
+
+    def test_output_equals_documented_merge_mihomo_result(self):
+        payload = subscription()
+        expected = merge_config(copy.deepcopy(payload), self.routing, '🚀 节点选择')
+        self.assertEqual(run_script(copy.deepcopy(payload), UMBRA_SCRIPT), expected)
+
+    def test_blacklist_default_keeps_proxy_udp_guards(self):
+        target = '🚀 节点选择'
+        rules = run_script(subscription(), UMBRA_SCRIPT)['rules']
+        self.assertEqual(rules[-1], 'MATCH,DIRECT')
+        self.assertNotIn('MATCH,' + target, rules)
+        self.assertEqual(rules[0], 'DST-PORT,53,leora-dns-out')
+        self.assertEqual(rules.count('DST-PORT,853,REJECT'), 1)
+        for index, rule in enumerate(rules):
+            parts = rule.split(',')
+            position = -2 if parts[-1] == 'no-resolve' else -1
+            if parts[position] != target:
+                continue
+            condition = ','.join(parts[:position])
+            guard = ('AND,((NETWORK,udp),(' + condition + ')),REJECT' +
+                     (',no-resolve' if position == -2 else ''))
+            self.assertEqual(rules[index + 1], guard, rule)
+
+    def test_node_only_profile_uses_umbra_fallback_group(self):
+        payload = {'proxies': [node('节点 A'), node('节点 B')],
+                   'rules': ['MATCH,DIRECT']}
+        actual = run_script(payload, UMBRA_SCRIPT)
+        group = next(g for g in actual['proxy-groups'] if g['name'] == 'Umbra-Proxy')
+        self.assertEqual(group['type'], 'select')
+        self.assertTrue(any(rule.endswith(',Umbra-Proxy') for rule in actual['rules']))
+        self.assertEqual(actual['dns']['nameserver'][0],
+                         'https://1.1.1.1/dns-query#Umbra-Proxy')
+        self.assertEqual(run_script(copy.deepcopy(actual), UMBRA_SCRIPT), actual)
+
+    def test_applying_twice_is_idempotent(self):
+        once = run_script(subscription(), UMBRA_SCRIPT)
+        self.assertEqual(run_script(copy.deepcopy(once), UMBRA_SCRIPT), once)
 
 
 class CliTests(unittest.TestCase):

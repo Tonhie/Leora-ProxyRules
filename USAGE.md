@@ -4,16 +4,21 @@ Mihomo/Xray 通过“代理连接，代理不可用时失败”降低真实公�
 
 ## 默认策略
 
-只有防护配置，没有普通版或模式开关。
+两套防护配置共用同一份显式规则，只改变“未命中的默认出口”，没有关闭防护的选项：
 
-- Shadowrocket：使用 `Leora-ProxyRules.conf`，保留原有分流和 UDP 不支持时拒绝；不再伪造 STUN 响应，STUN 直连/代理行为跟随路由。
-- Mihomo/Xray：内部 DNS 接管 → 原本地/校园/Tailscale 绕过 → 隐私防护（DoT） → Shadowrocket 完整可转换分流顺序 → 国内 IP 兜底直连。国内/B站/Apple 等继续按源规则直连；Steam 下载直连、商店/社区代理。所有代理规则之后、`MATCH` 之前增加 `GEOIP,CN,DIRECT`，只兜底未被显式列表覆盖的国内 IP（游戏、QUIC/CDN 等），不抢在代理规则前面。China DIRECT 块另加国内 IPv6 前缀直连规则集，其余 IPv6 目标最终落到 `FINAL`/`MATCH` 走代理，详见[国内 IPv6 直连](#国内-ipv6-直连)。
+- **Leora（白名单）**：显式列出直连/拒绝目标，未命中的域名与 IPv4 走代理；即除国内（及显式直连）外全部代理。与仓库原有版本完全一致。
+- **Umbra（黑名单）**：显式规则与 Leora 相同，未命中的域名与 IPv4 直连，只有显式代理列表走代理。`Umbra-ProxyRules.conf` 由 `build_rules.py` 从 `Leora-ProxyRules.conf` 派生，不要手工编辑；两版的 Mihomo/Xray 叠加层同样由生成器产出。
+
+两种模式的 IPv6 都保持 fail-closed：国内 IPv6 前缀直连，其余真实 IPv6 拒绝并回退 IPv4。Leora 的 Xray 用 `FINAL→proxy` 兜底未命中 IPv6；Umbra 的兜底是 DIRECT，因此生成器会在规则末尾追加 `2000::/3 → block`，黑名单模式也不会把真实 IPv6 直连出去。UDP 跟随路由：两版都为每条代理规则保留同条件 UDP 拒绝兜底；Leora 未命中的 UDP 拒绝，Umbra 未命中的 UDP 跟随直连默认。浏览器 WebRTC 限制模板两版都必须部署。
+
+- Shadowrocket：使用 `Leora-ProxyRules.conf`（白名单）或 `Umbra-ProxyRules.conf`（黑名单），保留原有分流和 UDP 不支持时拒绝；不再伪造 STUN 响应，STUN 直连/代理行为跟随路由。
+- Mihomo/Xray（`--mode leora` 白名单 / `--mode umbra` 黑名单）：内部 DNS 接管 → 原本地/校园/Tailscale 绕过 → 隐私防护（DoT） → Shadowrocket 完整可转换分流顺序 → 国内 IP 兜底直连。国内/B站/Apple 等继续按源规则直连；Steam 下载直连、商店/社区代理。所有代理规则之后、`MATCH` 之前增加 `GEOIP,CN,DIRECT`，只兜底未被显式列表覆盖的国内 IP（游戏、QUIC/CDN 等），不抢在代理规则前面。China DIRECT 块另加国内 IPv6 前缀直连规则集，其余 IPv6 目标按所选模式兜底：Leora 落到 `FINAL`/`MATCH` 走代理，Umbra 在规则末尾被拒绝，详见[国内 IPv6 直连](#国内-ipv6-直连)。
 - 同济内网：`gardilily.com` 及其子域（如 `vesper-center.gardilily.com`）在校园直连块中显式 `DIRECT`。该站点解析到校园私有地址（`10.60.150.234`），代理节点无法访问校园网，经代理必然失败；域名由公网权威 DNS 直接返回真实内网地址，因此不加入 `[Host]` 专用 DNS。离开校园网且未连校园 VPN 时直连失败属于预期边界。
-- STUN/TURN：不再有全局端口/域名拒绝。STUN 服务按路由决定：直连目标允许，代理目标在同条件 UDP 拒绝兜底处关闭，未匹配 UDP 仍被最后一条 `NETWORK,udp,REJECT` 拒绝。因此国内/直连站点可以拿到真实映射，代理目标不会以真实 IP 直连。
+- STUN/TURN：不再有全局端口/域名拒绝。STUN 服务按路由决定：直连目标允许，代理目标在同条件 UDP 拒绝兜底处关闭；未匹配 UDP 在 Leora 由最后一条 `NETWORK,udp,REJECT` 拒绝，在 Umbra 跟随直连默认。因此国内/直连站点可以拿到真实映射，代理目标不会以真实 IP 直连。
 - 隐私防护：拒绝外部 TCP/UDP `853`，避免应用绕过配置的 DNS 使用 DoT/DoQ；该规则仍在所有国内直连之前全局生效。**STUN 放行会增加浏览器 WebRTC 暴露面**：恶意网页可以利用任意直连 STUN 服务器取得真实公网 IP；因此浏览器侧 WebRTC 限制仍是必须项，路由层不再假装能完全拦截 STUN。
-- Mihomo 在每条 PROXY 规则后保留同条件 UDP 拒绝兜底，节点不支持 UDP 时不落入后面的 DIRECT。Xray 代理出口失败后不会重新匹配直连规则。末尾的 `GEOIP,CN,DIRECT` 位于全部代理规则之后，不会让本应代理的流量提前直连；代理规则后的 UDP 兜底仍只作用于代理命中项。
+- Mihomo 在每条 PROXY 规则后保留同条件 UDP 拒绝兜底，节点不支持 UDP 时不落入后面的 DIRECT。Xray 代理出口失败后不会重新匹配直连规则。末尾的 `GEOIP,CN,DIRECT` 位于全部代理规则之后，不会让本应代理的流量提前直连；代理规则后的 UDP 兜底仍只作用于代理命中项。Umbra 的 `MATCH` 目标是 `DIRECT`，末尾不再有全局 `NETWORK,udp,REJECT`：未命中 UDP 与 TCP 一样直连，但代理命中项的 UDP 兜底仍保留。
 - **WebRTC 部署必须配合下文浏览器限制。** 现在 STUN 对直连目标开放，路由层不会拦截浏览器到直连 STUN 服务器的请求，也无法阻止全部 ICE 本地信息；只有浏览器限制才能避免把真实 IP 发给网页。不要把修改后的配置理解为“所有设备绝对不泄漏”。
-- 转换边界：USER-AGENT/URL-REGEX 不可直接转换，记录在 `conversion-report.json`；Xray ASN 使用 RIPE 公告网段快照，`IPOnDemand` 无法逐条模拟 Shadowrocket `no-resolve`；`GEOIP,CN` 在 Mihomo 使用 GeoIP 数据库，在 Xray 转换为 `geoip:cn`（测试需要 `geoip.dat`）。隐私规则是有意加入的优先覆盖，普通分流的来源、动作和相对顺序保持同步。
+- 转换边界：USER-AGENT/URL-REGEX 不可直接转换，记录在 `conversion-report.json`（Umbra 对应 `Umbra-conversion-report.json`）；Xray ASN 使用 RIPE 公告网段快照，`IPOnDemand` 无法逐条模拟 Shadowrocket `no-resolve`；`GEOIP,CN` 在 Mihomo 使用 GeoIP 数据库，在 Xray 转换为 `geoip:cn`（测试需要 `geoip.dat`）。隐私规则是有意加入的优先覆盖，普通分流的来源、动作和相对顺序保持同步。
 - 下载区域须在 Steam 客户端选择中国大陆；规则不能控制 Steam 实际选择哪个 CDN，未知下载域名仍走代理。依据 [SteamCN](https://github.com/blackmatrix7/ios_rule_script/blob/master/rule/Shadowrocket/SteamCN/SteamCN.list) 和 [Steam](https://github.com/blackmatrix7/ios_rule_script/blob/master/rule/Shadowrocket/Steam/Steam.list) 列表筛选下载端点，排除商店、社区和其他宽泛的 SteamCN 直连范围。
 
 广告规则只能拦截覆盖范围内的广告。代理规则须由支持 UDP 的节点转发 UDP，否则拒绝；直连规则保持直连，因此直连目标可以使用 STUN，这也意味着浏览器侧必须另行限制 WebRTC。客户端退出后的持续阻断需要系统或客户端 kill switch。
@@ -22,14 +27,14 @@ Mihomo/Xray 通过“代理连接，代理不可用时失败”降低真实公�
 
 `[General]` 现为 `ipv6 = true`（`prefer-ipv6` 仍为 `false`，IPv4 保持优先）。China DIRECT 块在 `China_Domain.list` 之后、`DOMAIN-SUFFIX,tonhie.online` 之前新增一条 `RULE-SET,https://raw.githubusercontent.com/PaPerseller/chn-iplist/master/ruleset/ipv6-cidr6.list,DIRECT`。该列表与仓库既有的 proxy-special/reject-special/direct-cdn 来自同一维护者，是大陆 IPv6 前缀表（约 2018 条 `IP-CIDR6,...,no-resolve`）；Shadowrocket 直接抓取上游 URL。
 
-- 分流效果：China 列表几乎不含 IPv6，此前 `ipv6 = false` 会丢弃 AAAA。现在按客户端分别处理：Shadowrocket 返回真实 AAAA，大陆 IPv6 目标命中前缀规则直连，其余**真实 IPv6** 命中 `IP-CIDR6,2000::/3,REJECT,no-resolve` 被立即拒绝，应用回退 IPv4；Mihomo 的 AAAA 由 fake-IP 的 IPv6 段（`fc00::/18`）应答，域名按域名规则分流（国内域名直连、境外域名代理、广告拒绝），只有字面量 IPv6 才进入前缀规则和拒绝规则；Xray 返回真实 AAAA 并在路由中按 IPv6 前缀匹配（该拒绝规则不加入 Xray，见下）。`prefer-ipv6 = false` 只影响 Shadowrocket 的地址族选择。
+- 分流效果：China 列表几乎不含 IPv6，此前 `ipv6 = false` 会丢弃 AAAA。现在按客户端分别处理：Shadowrocket 返回真实 AAAA，大陆 IPv6 目标命中前缀规则直连，其余**真实 IPv6** 命中 `IP-CIDR6,2000::/3,REJECT,no-resolve` 被立即拒绝，应用回退 IPv4；Mihomo 的 AAAA 由 fake-IP 的 IPv6 段（`fc00::/18`）应答，域名按域名规则分流（国内域名直连、境外域名代理、广告拒绝），只有字面量 IPv6 才进入前缀规则和拒绝规则；Xray 返回真实 AAAA 并在路由中按 IPv6 前缀匹配（该拒绝规则不加入 Xray，见下）。`prefer-ipv6 = false` 只影响 Shadowrocket 的地址族选择。Umbra 的 Shadowrocket/Mihomo 规则与 Leora 相同（同样前置拒绝未识别 IPv6）；Umbra 的 Xray 兜底是 DIRECT，生成器会在末尾追加 `2000::/3 → block`，避免未识别的真实 IPv6 直连泄漏。
 - 节点要求：Mihomo/Shadowrocket 的域名代理在节点侧解析域名，节点只有 IPv4 也能正常代理境外站点；只有“真实 IPv6 字面量经代理”才需要节点支持 IPv6（Shadowrocket/Clash 已直接拒绝，Xray 仍保留代理路径）。无法接受时按下面的回退步骤禁用 IPv6；上游 `chn-iplist` 的说明也是“服务器不支持 IPv6 时设为仅 IPv4”。
 - Mihomo/FlClash：顶层 `ipv6: true`、`dns.ipv6: true`，TUN 写入 `inet6-address: fdfe:dcba:9876::1/126`，fake-IP 增加 IPv6 段 `fake-ip-range6: fc00::/18`（缺省时 mihomo 1.19.32 对 AAAA 直接返回空答案）。新增的 `IP-CIDR6,2000::/3,REJECT,no-resolve` 只拒绝真实 IPv6：fake-IP 的 `fc00::/18` 不在 `2000::/3` 内，且域名连接先恢复域名再匹配规则，因此境外域名按域名规则走代理，不会被误拒。该来源全部为 IP 前缀，生成器把它转成 `behavior: ipcidr` 的 rule-provider（裸 CIDR payload，托管在本仓库 `providers/` 下），并在同一 China 位置输出 `RULE-SET,<provider>,DIRECT`。
-- Xray：DNS `queryStrategy` 与直连出口均为 `UseIP`；该列表在路由中展开为 `ip` 条目、`outboundTag: direct`，位置与 Shadowrocket 源顺序一致。**`IP-CIDR6,2000::/3,REJECT` 不转换到 Xray**：Xray 的 `IPOnDemand` 会对域名做 IP 规则解析，若加入这条会在域名规则之前把境外域名整体 block；因此 Xray 保留“其余 IPv6 走代理”的行为。
+- Xray：DNS `queryStrategy` 与直连出口均为 `UseIP`；该列表在路由中展开为 `ip` 条目、`outboundTag: direct`，位置与 Shadowrocket 源顺序一致。**`IP-CIDR6,2000::/3,REJECT` 不转换到 Xray**：Xray 的 `IPOnDemand` 会对域名做 IP 规则解析，若加入这条会在域名规则之前把境外域名整体 block；因此 Leora 的 Xray 保留“其余 IPv6 走代理”的行为。Umbra 的 Xray 例外：兜底是 DIRECT，没有 `FINAL→proxy` 保护，生成器会在最后一条规则前插入 `2000::/3 → block`（`ruleTag: foreign-ipv6-deny`），保证未识别的真实 IPv6 不会直连。
 - 应用层要求：Clash/FlClash 的 IPv6 必须开启（工具 → 常规 → 内核 → IPv6 = 开启；Android 进阶配置 → 网络 → VPN 中开启 IPv6），否则应用会覆盖脚本并禁用 IPv6。TUN 必须保持开启，否则 IPv6 不被接管。见[必须手动对齐的 Clash 应用级设置](#必须手动对齐的-clash-应用级设置)。
 - 已知取舍：大陆 IPv6 依赖“前缀命中”——不在大陆 IPv6 列表里的国内地址会被 `2000::/3` 拒绝规则拒绝；境外 IPv6-only 站点同样会被拒绝（这是“国外禁用 IPv6”的直接后果），需要访问时只能改该行为 `PROXY` 并确保节点有 IPv6。Mihomo 的 IPv6 域名连接使用 fake 地址（`fc00::/18`），IP 前缀规则不参与域名连接的分流：不在 China 域名列表里但解析到大陆 IPv6 的域名仍会走代理；直连出站对域名使用哪一地址族由核心/解析器决定，不强制 IPv6 优先（`prefer-ipv6` 固定 `false`，且只有 Shadowrocket 有该开关）。
 - 未采用的替代方案：曾评估把大陆 v6 前缀加入 Shadowrocket `tun-excluded-routes` / Mihomo `tun.route-exclude-address`，但没有采用。Mihomo 的 `route-exclude-address-set` 只在 Linux auto-redirect 模式生效，普通 TUN 无效；把约 2018 条前缀内联进单一源配置会明显膨胀，且在 IPv6 已启用、内核按规则集分流后是冗余的；DIRECT 规则集同时覆盖 TUN 与系统代理路径。**但 Tailscale 的 `fd7a:115c:a1e0::/48` 必须加入 `tun-excluded-routes`（已加入）**：否则启用 IPv6 后 TUN 会接管尾网 IPv6，`leora-mc` 这类尾网主机就不再直连。结果满足目标：大陆/尾网 IPv6 直连，其余真实 IPv6 拒绝，不因直连泄漏。
-- 回退：把 `ipv6` 改回 `false` 并重新运行 `build_rules.py`、`build_clash.py`，同时关闭客户端应用层 IPv6。`prefer-ipv6` 为固定值，改动会触发审计失败。仓库每天由 GitHub Actions 重新拉取该列表并提交刷新后的 provider。
+- 回退：把 `ipv6` 改回 `false` 并重新运行 `build_rules.py`、`build_clash.py`，同时关闭客户端应用层 IPv6。`prefer-ipv6` 为固定值，改动会触发审计失败。仓库每月 1 日由 GitHub Actions 重新拉取该列表并提交刷新后的 provider（Leora 与 Umbra 共用同一批 provider）。
 
 ## Mihomo
 
@@ -37,12 +42,13 @@ Mihomo/Xray 通过“代理连接，代理不可用时失败”降低真实公�
 
 ```bash
 python3 -m pip install -r requirements.txt
-python3 merge_mihomo.py --input original.yaml --output protected.yaml
+python3 merge_mihomo.py --mode leora --input original.yaml --output protected.yaml
+python3 merge_mihomo.py --mode umbra --input original.yaml --output protected-umbra.yaml
 # 代理节点/静态策略组不叫 PROXY 时
-python3 merge_mihomo.py --input original.yaml --output protected.yaml --proxy-name MY-NODE
+python3 merge_mihomo.py --mode leora --input original.yaml --output protected.yaml --proxy-name MY-NODE
 ```
 
-将 `protected.yaml` 作为客户端配置加载，保持 **Rule/规则模式** 并开启客户端 TUN 权限。合并结果已开启 IPv6，写入 IPv6 TUN 地址（`fdfe:dcba:9876::1/126`）和 fake-IP 的 IPv6 段（`fc00::/18`），需确认 TUN 同时接管 IPv4 与 IPv6；系统或客户端若另有 IPv6 开关，不要关闭。订阅或原配置更新后，需要重新执行合并并重新加载。
+将 `protected.yaml`（或 Umbra 的 `protected-umbra.yaml`）作为客户端配置加载，保持 **Rule/规则模式** 并开启客户端 TUN 权限。`--mode umbra` 使用同一套显式规则的黑名单路由：未命中目标直连，显式代理列表仍走 `--proxy-name` 指定的节点/策略组；末尾 `MATCH` 为 `DIRECT`，未命中 UDP 不再被全局拒绝。合并结果已开启 IPv6，写入 IPv6 TUN 地址（`fdfe:dcba:9876::1/126`）和 fake-IP 的 IPv6 段（`fc00::/18`），需确认 TUN 同时接管 IPv4 与 IPv6；系统或客户端若另有 IPv6 开关，不要关闭。订阅或原配置更新后，需要重新执行合并并重新加载。
 
 脚本保留节点及其他顶层配置，替换通用 `rules`，合并本仓库 `rule-providers`，并替换 `tun`、`dns`、`ipv6`、`mode`、`hosts`。TUN 排除列表逐项读取 Shadowrocket 的 `tun-excluded-routes`，包含其局域网、Tailscale IPv4 与 IPv6 网段。应用前检查客户端是否额外注入绕过列表、应用排除、`listeners` 的专用规则或指定出站；这些可能绕过通用规则。
 
@@ -50,27 +56,28 @@ DNS 使用 fake-IP，默认查询为指定代理上的加密 DoH，直连目标�
 
 代理目标必须是实际节点或能静态核验的策略组，组内不能包含 DIRECT、PASS 等；带动态 `use`/`include-all` 或成员过滤条件的分组无法核验，会明确报错。此时请将要用的实际节点放入 `proxies`，或建立只引用这些节点的静态策略组，再用 `--proxy-name` 指定。不要把带节点凭据的 `original.yaml`、`protected.yaml` 提交到公开仓库。
 
-主 YAML 已包含 DNS/TUN 和防护规则，不再需要额外的 DNS 或防护模板。手动合并时必须同时保留所有字段和 `providers` 引用，建议使用脚本。
+两套主 YAML（Leora/Umbra）都已包含 DNS/TUN 和防护规则，不再需要额外的 DNS 或防护模板。手动合并时必须同时保留所有字段和 `providers` 引用，建议使用脚本。
 
 ## Clash Extend 脚本
 
-Clash 的每个配置都有**扩展（Extend）**，其中“脚本”模式会用一段 JavaScript 改写整个配置。`Leora-Clash-Extend.js` 由 `build_clash.py` 从同一份 `Leora-Clash-Routing.yaml` 生成：保留订阅的节点、策略组和 `proxy-providers`，把规则、`rule-providers`、DNS、TUN、hosts、`mode`、`ipv6` 替换为 Leora 集合，追加 `leora-dns-out` DNS 出站，并自动把规则目标指向订阅里可核验的策略组；必要时新建 `Leora-Proxy` 选择组。
+Clash 的每个配置都有**扩展（Extend）**，其中“脚本”模式会用一段 JavaScript 改写整个配置。`Leora-Clash-Extend.js` 和 `Umbra-Clash-Extend.js` 由 `build_clash.py` 分别从两套 `*-Clash-Routing.yaml` 生成：保留订阅的节点、策略组和 `proxy-providers`，把规则、`rule-providers`、DNS、TUN、hosts、`mode`、`ipv6` 替换为对应模式集合，追加 `leora-dns-out` DNS 出站，并自动把规则目标指向订阅里可核验的策略组；必要时新建 `Leora-Proxy` / `Umbra-Proxy` 选择组。
 
 ### 导入与绑定
 
 1. Clash → **工具 → 进阶配置 → 脚本** → 右上角添加 → **从 URL 导入** 或 **从文件导入**：
-   - URL：`https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/Leora-Clash-Extend.js`
-   - 文件：仓库中的 `Leora-Clash-Extend.js`
-2. **配置** → 目标配置右侧菜单 → **扩展（Extend）** → 扩展模式选 **脚本** → 选中刚导入的脚本。
+   - 白名单 URL：`https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/Leora-Clash-Extend.js`
+   - 黑名单 URL：`https://raw.githubusercontent.com/Tonhie/Leora-ProxyRules/refs/heads/main/Umbra-Clash-Extend.js`
+   - 文件：仓库中的 `Leora-Clash-Extend.js` 或 `Umbra-Clash-Extend.js`
+2. **配置** → 目标配置右侧菜单 → **扩展（Extend）** → 扩展模式选 **脚本** → 选中对应模式的脚本。
 3. 退出扩展页后 Clash 会自动重新应用；可在配置菜单的 **预览** 中确认规则、DNS 和 `leora-dns-out` 已出现。
 4. 刷新订阅不会覆盖脚本；脚本会在每次应用配置时重新执行。
 
 ### 脚本做了什么
 
-- 规则序列与 `Leora-Clash-Routing.yaml` 逐条一致：本地/校园/Tailscale 直连、DNS 接管、DoT 拦截、广告拒绝、Steam 下载直连、完整来源顺序和每条代理规则后的 UDP 拒绝兜底；`MATCH` 和 `#PROXY` 会替换为实际目标。当规则目标能在静态节点/策略组上核验时，输出与 `merge_mihomo.py` 的结果相同；节点或 provider 订阅由脚本自建目标，`merge_mihomo` 无法校验该目标，但规则内容与兜底仍相同。
+- 规则序列与所选模式的 `Leora-Clash-Routing.yaml` 或 `Umbra-Clash-Routing.yaml` 逐条一致：本地/校园/Tailscale 直连、DNS 接管、DoT 拦截、广告拒绝、Steam 下载直连、完整来源顺序和每条代理规则后的 UDP 拒绝兜底；`MATCH` 和 `#PROXY` 会替换为实际目标。当规则目标能在静态节点/策略组上核验时，输出与 `merge_mihomo.py` 的结果相同；节点或 provider 订阅由脚本自建目标，`merge_mihomo` 无法校验该目标，但规则内容与兜底仍相同。
 - 末尾在 `MATCH` 之前保留 `GEOIP,CN,DIRECT`，只兜底未被前面代理/直连规则命中的国内 IP（游戏 UDP、QUIC/CDN），不会抢在代理规则前。STUN/TURN 不再全局拦截：直连目标允许，代理目标由同条件 UDP 拒绝兜底关闭；外部 DoT（853）仍全局阻断。直连 STUN 会重新暴露浏览器 WebRTC 面，浏览器限制仍是必须项。
-- 自动选择规则目标：优先 `PROXY`、`节点选择`、`手动选择` 等命名策略组，其次任一可静态核验到真实节点的策略组，再退到带 provider 来源（`use`/`include-all`/`include-all-proxies`）且静态成员可核验的动态组；都没有时用全部真实节点创建 `Leora-Proxy` 选择组。若订阅既没有可用真实节点、也没有非空 `proxy-providers`，脚本会直接报错而不是落入直连；只有 provider 时用它们创建 `Leora-Proxy`。
-- `rule-providers` 按名称合并：订阅自有 provider 保留，Leora provider 覆盖同名项；`proxy-providers` 原样保留。Clash 会把 provider 的 `path` 重写到自己的目录，无需手工处理。生成的 Leora provider 名由**源 URL 和动作**稳定计算，不随源规则行号变化；这样源规则调整顺序时不会把不同列表误当成同一个 provider 继续使用旧缓存。若确实改了同一源列表的内容，等待 provider 刷新周期或手动清除旧缓存即可。
+- 自动选择规则目标：优先 `PROXY`、`节点选择`、`手动选择` 等命名策略组，其次任一可静态核验到真实节点的策略组，再退到带 provider 来源（`use`/`include-all`/`include-all-proxies`）且静态成员可核验的动态组；都没有时用全部真实节点创建 `Leora-Proxy` / `Umbra-Proxy` 选择组。若订阅既没有可用真实节点、也没有非空 `proxy-providers`，脚本会直接报错而不是落入直连；只有 provider 时用它们创建对应选择组。
+- `rule-providers` 按名称合并：订阅自有 provider 保留，本仓库 provider 覆盖同名项；`proxy-providers` 原样保留。Clash 会把 provider 的 `path` 重写到自己的目录，无需手工处理。生成的 provider 名由**源 URL 和动作**稳定计算，不随源规则行号变化，且两版共用同一批 provider；这样源规则调整顺序时不会把不同列表误当成同一个 provider 继续使用旧缓存。若确实改了同一源列表的内容，等待 provider 刷新周期或手动清除旧缓存即可。
 - 若订阅已有名为 `leora-dns-out` 且类型不是 `dns` 的节点，脚本会报错；若同名节点本来就是 `type: dns`，会被去重后重新追加，不报错。
 - 固定残余差异：Clash 会额外写入 `tun.device: Clash`、重写 provider `path`、在订阅缺少时注入空的 `proxy-providers: {}`，并强制写入端口、`log-level`、`global-ua`、`profile.store-selected` 等应用级键；因此最终配置文本不可能与 YAML 逐字相同。
 
@@ -92,43 +99,45 @@ Clash 的每个配置都有**扩展（Extend）**，其中“脚本”模式会�
 
 `dns-hijack` 有一处固定差异：Clash 强制写成 `['any:53']`（仅 UDP），项目同时写 `tcp://any:53`。TCP 53 仍会被首条 `DST-PORT,53,leora-dns-out` 规则接管，因此行为一致；若要求配置文本也完全一致，可在桌面端的 **进阶配置 → 网络 → 虚拟网卡 → TUN 覆盖项** 添加 `dns-hijack`，值为 `any:53`、`tcp://any:53`。系统代理、端口、允许局域网、外部控制器等由 Clash 管理的字段不属于路由规则，保持客户端设置即可。
 
-因此，“完全一致”指 `rules`、`rule-providers`、DNS、hosts、`mode`、`ipv6` 以及 TUN 中除 `device` 外的项目字段语义一致（订阅自带 provider 时 `rule-providers` 是并集，Leora 同名项覆盖）；Clash 必然写入的 `tun.device`、provider `path`、端口/日志/`global-ua` 等应用级键属于固定残余差异。脚本里的 `mode`、`ipv6`、`tun.enable`、`tun.stack`、`tun.dns-hijack` 只是兜底值，Clash 应用后会用上面的应用级设置覆盖；不要依赖脚本单独改变这些开关。验证时打开配置菜单的 **预览**：脚本模式下预览内容就是最终交给核心的完整配置，可直接核对规则、DNS、TUN 和代理目标。
+因此，“完全一致”指 `rules`、`rule-providers`、DNS、hosts、`mode`、`ipv6` 以及 TUN 中除 `device` 外的项目字段语义一致（订阅自带 provider 时 `rule-providers` 是并集，本仓库同名项覆盖）；Clash 必然写入的 `tun.device`、provider `path`、端口/日志/`global-ua` 等应用级键属于固定残余差异。脚本里的 `mode`、`ipv6`、`tun.enable`、`tun.stack`、`tun.dns-hijack` 只是兜底值，Clash 应用后会用上面的应用级设置覆盖；不要依赖脚本单独改变这些开关。验证时打开配置菜单的 **预览**：脚本模式下预览内容就是最终交给核心的完整配置，可直接核对规则、DNS、TUN 和代理目标。
 
 ### 更新与校验
 
 ```bash
 python3 -m pip install -r requirements.txt
-python3 build_clash.py            # 重新生成 Leora-Clash-Extend.js
-python3 build_clash.py --check    # 生成物与当前路由不一致时失败
+python3 build_rules.py            # 重新生成 Leora + Umbra 的 YAML/Xray/provider/报告
+python3 build_clash.py            # 重新生成两套 Clash Extend 脚本
+python3 build_clash.py --check    # 任一生成物与当前路由不一致时失败
 python3 -m unittest discover -s tests -v
 ```
 
-`tests/test_clash_extend.py` 用 Node 近似 Clash 的 QuickJS `main(config)` 契约（V8 而非 QuickJS，只覆盖脚本使用的语言子集）执行脚本：静态订阅与 `merge_config` 做整字典比较，节点/provider 订阅校验完整规则序列、目标、provider 合并、幂等和报错路径。修改 `Leora-ProxyRules.conf` 或 Clash 路由后，GitHub Actions 会同时刷新 YAML 与脚本；CI 在重新生成前先运行 `build_clash.py --check`，提交了过期脚本会失败。Action 另有每日定时任务，重新拉取远程列表（含国内 IPv6 前缀列表）并提交 `providers/` 下刷新后的 provider，无需手动触发。
+`tests/test_clash_extend.py` 用 Node 近似 Clash 的 QuickJS `main(config)` 契约（V8 而非 QuickJS，只覆盖脚本使用的语言子集）执行脚本：静态订阅与 `merge_config` 做整字典比较，节点/provider 订阅校验完整规则序列、目标、provider 合并、幂等和报错路径。修改 `Leora-ProxyRules.conf` 后，生成器会同时派生 Umbra；GitHub Actions 会重建两套 YAML 与脚本。CI 在重新生成前先运行 `build_clash.py --check`，提交了过期脚本会失败。Action 每月 1 日定时执行一次，重新拉取远程列表（含国内 IPv6 前缀列表）并提交 `providers/` 与两套生成物，无需手动触发。
 
 ## Xray
 
 在仓库目录执行；默认代理出口标签为 `proxy`：
 
 ```bash
-python3 merge_xray.py --input original.json --output protected.json
-python3 merge_xray.py --input original.json --output protected.json --proxy-tag MY-NODE
+python3 merge_xray.py --mode leora --input original.json --output protected.json
+python3 merge_xray.py --mode umbra --input original.json --output protected-umbra.json
+python3 merge_xray.py --mode leora --input original.json --output protected.json --proxy-tag MY-NODE
 # 已有 balancer
-python3 merge_xray.py --input original.json --output protected.json --proxy-balancer MY-POOL
+python3 merge_xray.py --mode leora --input original.json --output protected.json --proxy-balancer MY-POOL
 ```
 
-将 `protected.json` 加载到使用 Xray 的客户端。它必须是包含 `outbounds` 的完整 Xray 对象或对象数组；不是任意厂商的 JSON 订阅格式。默认且始终应用防护，无普通模式。
+将 `protected.json` 加载到使用 Xray 的客户端。`--mode` 选择叠加层：Leora（白名单，`Leora-Xray-Routing.json`）或 Umbra（黑名单，`Umbra-Xray-Routing.json`）。它必须是包含 `outbounds` 的完整 Xray 对象或对象数组；不是任意厂商的 JSON 订阅格式。默认且始终应用防护，无普通模式。
 
 脚本保留节点、传输和 balancer，替换 DNS 与公共路由。顺序为 API 专用规则、内部 DNS 出口及接管、本地绕过、隐私规则、Shadowrocket 完整分流顺序。目标出口、balancer 候选及 `fallbackTag` 不能指向 freedom 直连等非代理出口。启用防护时拒绝带自定义路由脚本的叠加层，避免脚本覆盖防护。不要把含节点凭据的输入/输出文件上传公开仓库。
 
 **JSON 路由不会自动安装 TUN 或接管系统 UDP。** 在客户端开启 VPN/TUN，允许 UDP 转发，确认 IPv4 与 IPv6 均被接管；客户端无法接管 IPv6 时，应在系统/网络层禁用或阻断 IPv6，不能只依靠 DNS 策略。关闭应用绕过/绕过大陆/自动直连回退，配置代理故障时阻断连接。客户端停止后如需继续阻断，也需客户端或操作系统的 kill switch；这些不由路由 JSON 提供。
 
-合并器会用同步 DNS 策略替换原 `dns`，并添加 `leora-dns-out` DNS 出站。已进入核心的传统 TCP/UDP 53 查询被导入内置 DNS；专用 DNS 的内部查询以 `leora-dns` 标签直连固定解析器，其他解析使用经代理的 DoH。公网 DoH 的内部查询显式强制走代理，不会被 China 等直连规则覆盖；未获准的内部 DNS 目的地拒绝，代理故障不使用直连或系统 DNS。为避免代理域名解析循环，合并器为 `servers`/`vnext` 中的公网节点域名添加精确匹配的 `https://223.5.5.5/dns-query` 加密直连引导；校园/尾网节点域名继续使用专用 DNS。这类引导查询不提供代理隐藏。`leora-dns` 和 `leora-bootstrap` 是保留的内部标签，不能用于普通流量入站。直连出口使用内置 DNS；除校园/尾网专用策略与节点引导外，Xray 普通域名查询统一通过代理 DoH，比 Shadowrocket 允许的直连 DNS 范围更窄。两端按源配置启用 IPv6：Mihomo 顶层 `ipv6` 与 `dns.ipv6` 为 true，并配置 IPv6 TUN 地址；Xray DNS `queryStrategy` 与直连出口均为 `UseIP`，解析失败不退回系统解析器。Xray 没有等价的全局 IPv6 开关，外部客户端必须自己接管 IPv6。大陆 IPv6 前缀由新增的 ipcidr DIRECT 规则集匹配，其余 IPv6 目标不命中直连规则、最终走代理；Mihomo 的域名连接走 fake-IP 域名规则（见[国内 IPv6 直连](#国内-ipv6-直连)）。Xray 26.3.27 内置 DNS 处理 A/AAAA，其他记录类型明确拒绝；Tailscale 原生 DNS 的查询应通过系统本地路由访问 Quad100，可保留其其他记录类型能力。应用自带 DoH（443 或其他端口）不会被 53 接管；将浏览器安全 DNS 关闭以使用代理 DNS，或配置为同一受控 DoH 并验证其出口。标准 853 端口的 DoT/DoQ 被阻断，其他端口不保证覆盖。
+合并器会用同步 DNS 策略替换原 `dns`，并添加 `leora-dns-out` DNS 出站。已进入核心的传统 TCP/UDP 53 查询被导入内置 DNS；专用 DNS 的内部查询以 `leora-dns` 标签直连固定解析器，其他解析使用经代理的 DoH。公网 DoH 的内部查询显式强制走代理，不会被 China 等直连规则覆盖；未获准的内部 DNS 目的地拒绝，代理故障不使用直连或系统 DNS。为避免代理域名解析循环，合并器为 `servers`/`vnext` 中的公网节点域名添加精确匹配的 `https://223.5.5.5/dns-query` 加密直连引导；校园/尾网节点域名继续使用专用 DNS。这类引导查询不提供代理隐藏。`leora-dns` 和 `leora-bootstrap` 是保留的内部标签，不能用于普通流量入站。直连出口使用内置 DNS；除校园/尾网专用策略与节点引导外，Xray 普通域名查询统一通过代理 DoH，比 Shadowrocket 允许的直连 DNS 范围更窄。两端按源配置启用 IPv6：Mihomo 顶层 `ipv6` 与 `dns.ipv6` 为 true，并配置 IPv6 TUN 地址；Xray DNS `queryStrategy` 与直连出口均为 `UseIP`，解析失败不退回系统解析器。Xray 没有等价的全局 IPv6 开关，外部客户端必须自己接管 IPv6。大陆 IPv6 前缀由新增的 ipcidr DIRECT 规则集匹配；Leora 中其余 IPv6 目标不命中直连规则、最终走代理，Umbra 中则在 DIRECT 兜底前被 `2000::/3 → block` 拦截；Mihomo 的域名连接走 fake-IP 域名规则（见[国内 IPv6 直连](#国内-ipv6-直连)）。Xray 26.3.27 内置 DNS 处理 A/AAAA，其他记录类型明确拒绝；Tailscale 原生 DNS 的查询应通过系统本地路由访问 Quad100，可保留其其他记录类型能力。应用自带 DoH（443 或其他端口）不会被 53 接管；将浏览器安全 DNS 关闭以使用代理 DNS，或配置为同一受控 DoH 并验证其出口。标准 853 端口的 DoT/DoQ 被阻断，其他端口不保证覆盖。
 
-主 JSON 已包含广告拒绝、Steam 例外及防护规则，不再提供纯防护或无防护模板。
+两套主 JSON（Leora/Umbra）都已包含广告拒绝、Steam 例外及防护规则，不再提供纯防护或无防护模板。
 
 ## 域名专用 DNS 与 Tailscale 同步
 
-唯一 DNS 映射来源为 `Leora-ProxyRules.conf` 的 `[Host]`，修改后运行生成器；Mihomo/Xray 合并器也读取同一来源。域名本身及其全部子域名都适用：
+唯一 DNS 映射来源为 `Leora-ProxyRules.conf` 的 `[Host]`，修改后运行生成器（Umbra 配置自动继承同一 `[Host]`，无需单独维护）；Mihomo/Xray 合并器也读取同一来源。域名本身及其全部子域名都适用：
 
 | 域名 | DNS |
 | --- | --- |
@@ -186,9 +195,9 @@ python3 tests/verify_privacy.py --mihomo /absolute/path/to/mihomo --xray /absolu
 python3 tests/verify_profiles.py --mihomo /absolute/path/to/mihomo --xray /absolute/path/to/xray
 ```
 
-已用 Mihomo **1.19.32**、Xray **26.3.27** 验证主配置及合并结果。测试覆盖全部远程来源、动作与逐项规则顺序；广告 TCP/UDP 拒绝、代理 UDP 收发、不支持 UDP/代理不可用时不落入后续 DIRECT、普通 DIRECT 的 TCP/UDP，以及 Steam 下载 TCP/UDP 直连、商店代理。
+`verify_profiles.py` 会依次校验 Leora 与 Umbra 两套完整配置；两版互补关系、IPv6/UDP 防泄漏不变量、报告与 provider 一致性由 `tests/test_modes.py` 覆盖。已用 Mihomo **1.19.32**、Xray **26.3.27** 验证两套主配置及合并结果。测试覆盖全部远程来源、动作与逐项规则顺序；广告 TCP/UDP 拒绝、代理 UDP 收发、不支持 UDP/代理不可用时不落入后续 DIRECT、普通 DIRECT 的 TCP/UDP，以及 Steam 下载 TCP/UDP 直连、商店代理。
 
-Action 使用固定版本且校验 SHA-256 的官方核心，运行上述全部检查后才发布生成文件。DNS 测试用本地解析器替身验证七组域名的根域/子域和专用 DNS 无记录时不回退，并验证公网 TCP/UDP 53 接管、默认路由为 DIRECT 时仍走指定代理、代理断开没有直连 DNS 回退；另验证尾网域名的 TCP/UDP 直连路径。没有实测校园 DNS 或实际尾网可达性。
+Action 每月 1 日执行一次，使用固定版本且校验 SHA-256 的官方核心，运行上述全部检查后才发布生成文件。DNS 测试用本地解析器替身验证七组域名的根域/子域和专用 DNS 无记录时不回退，并验证公网 TCP/UDP 53 接管、默认路由为 DIRECT 时仍走指定代理、代理断开没有直连 DNS 回退；另验证尾网域名的 TCP/UDP 直连路径。没有实测校园 DNS 或实际尾网可达性。
 
 测试使用本地 SOCKS 代理、回环接收端和固定 DNS 映射，不连接实际 Steam 服务。Steam 下载直连通过核心路由日志确认；这不是下载测速或 CDN 地域检测。公网 DNS 路由测试将 HTTPS 临时替换为本地 DNS-over-TCP 替身，测试路由与故障路径；生成配置的 HTTPS 要求另由静态回归检查，测试不修改系统证书信任。关闭防护的配置仅在临时测试目录作为直连对照组生成，不发布。测试不启用系统 TUN，不修改本机网络；Shadowrocket 的 STUN 设置及 Steam 优先级做配置静态检查，未运行 iOS 客户端。
 
@@ -205,6 +214,7 @@ Action 使用固定版本且校验 SHA-256 的官方核心，运行上述全部�
 | 客户端退出/崩溃 | 在已有 kill switch 的前提下退出客户端；应阻断连接，不应恢复 ISP 直连 | 待测 |
 | 浏览器限制 | 确认受管策略有效或 Firefox 设置生效，刷新测试页；再检查所需语音/会议功能 | 待测 |
 | 校园/Tailscale | 在相应网络内查询上述域名；检查返回真实地址，并验证尾网 IPv4/IPv6、TCP/UDP 可达 | 待测 |
+| Umbra 黑名单 | 选一个不在任何显式代理列表里的境外目标，确认走直连；再验证未知真实 IPv6 被拒绝而不是直连 | 待测 |
 | 恢复 | 恢复原节点和配置，验证网络与必要的通话功能恢复正常 | 待测 |
 
 本地核心测试不能替代这些设备测试。没有启用 kill switch 时，路由 JSON/YAML 无法承诺客户端退出后继续阻断流量。
